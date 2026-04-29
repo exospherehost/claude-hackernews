@@ -244,79 +244,148 @@ Same vocabulary as the claude-reddit playbook, adapted for HN's audience:
 
 Rotate the search query across sessions so the same query doesn't
 appear in the account's history twice in a row (`CLAUDE.md` rule 8 on
-read cadence). The `comments/` log under this folder tells you which
-threads the operating account already engaged with — check it before
-drafting on a new one.
+read cadence).
 
-### Writes (post, comment, vote, favorite)
+**Before picking a thread to draft on, scan three surfaces for prior
+coverage:**
 
-Same browser, plus the draft-and-approve flow from `CLAUDE.md`:
+- `comments/` — already posted by the operating account.
+- `drafts/` — already drafted on this branch, pending manual post by
+  the user.
+- Open PRs on this repo — drafts on *other* branches, also pending
+  manual post. Each draft-PR commits a `drafts/<timestamp>.md`, so
+  the thread ID surfaces in the diff.
+
+Don't drift into the drafting step on a thread one of those already
+covers — the user would just be re-posting themselves into a
+duplicate. Concrete recipe:
+
+```bash
+THREAD_ID=<id-from-news.ycombinator.com/item?id=...>
+# Local logs (current branch). Anchor on item?id= so the THREAD_ID
+# can't false-match a substring elsewhere (handle name, body text,
+# different field).
+grep -rl "item?id=$THREAD_ID" comments/ drafts/ 2>/dev/null
+
+# Open PRs (drafts on other branches). gh pr diff shows the patch;
+# if a draft for this thread is in flight there, it will mention
+# the thread ID as part of an item URL in the new draft file.
+gh pr list --state open --json number --jq '.[].number' \
+  | while read pr; do
+      gh pr diff "$pr" 2>/dev/null \
+        | grep -q "item?id=$THREAD_ID" \
+        && echo "PR #$pr already covers id=$THREAD_ID"
+    done
+```
+
+If any of those returns a hit, surface it to the user and pick a
+different thread. Same recipe runs again at the formal duplicate
+check (Writes step 3) as a belt-and-suspenders.
+
+### Writes (drafts only — the user posts manually)
+
+**Per `CLAUDE.md` "Drafts only (never post)", Claude does not submit to
+HN.** Every "write" — top-level comment, reply, story submission — is
+produced as a *draft file* in `drafts/`. The user reviews, then pastes
+into HN themselves. Voting and favoriting are also paused.
+
+The flow:
 
 1. Pull the page state with `browser_get_state`.
 2. Confirm HN guidelines and the thread's local norms permit what
-   you're about to do (read OP body and top 3-5 comments to gauge
+   you're proposing (read OP body and top 3-5 comments to gauge
    tone; for Show HN, check whether commenter affiliation is welcome).
 3. **Duplicate check** (`CLAUDE.md` rule 7): eval the thread for any
-   existing comment by the operating account. Snippet:
+   existing comment by the operating account. Even though we're not
+   submitting, we still don't draft a reply for a thread the account
+   has already engaged with — the user would just be re-posting
+   themselves into a duplicate. Snippet:
    ```js
    (()=>{
-     const handle = OPERATING_HANDLE.toLowerCase();
+     // Read the operating handle off the page header (same source as
+     // the identity-detection snippet earlier), then look for any
+     // comment-row author link matching it. Self-contained, no
+     // OPERATING_HANDLE substitution needed.
+     const me = document.querySelector('span.pagetop a[href^="user?id="]');
+     if (!me) return JSON.stringify({error: "not logged in"});
+     const handle = me.textContent.trim().toLowerCase();
      // HN: each comment header has <a class="hnuser" href="user?id=<handle>">.
      const matches = Array.from(document.querySelectorAll('a.hnuser'))
        .filter(a => (a.textContent || '').trim().toLowerCase() === handle);
-     return JSON.stringify({already_commented: matches.length > 0, by_count: matches.length});
+     return JSON.stringify({handle, already_commented: matches.length > 0, by_count: matches.length});
    })()
    ```
-   If `already_commented` is true, abort and surface to the user. Do
-   NOT post a second top-level comment on a thread the account has
-   already engaged with.
-4. Draft the full text and present it to the user. **No em-dashes,
-   en-dashes, fancy ellipses, curly quotes, or unicode arrows** in
-   the draft (rule from `CLAUDE.md` brand voice). HN pattern-matches
-   these to LLM output even faster than Reddit does.
+   Also re-run the three-surface coverage scan from the search
+   section above (`comments/`, `drafts/`, and open PRs on this repo)
+   for an entry pointing at the same thread ID. If any surface
+   matches, abort the draft and surface the existing coverage to the
+   user. (This duplicates the pre-selection check on purpose: a fresh
+   draft might have landed on another branch since you picked the
+   thread.)
+4. Draft the full text. **No em-dashes, en-dashes, fancy ellipses,
+   curly quotes, or unicode arrows** (rule from `CLAUDE.md` brand
+   voice). HN pattern-matches these to LLM output even faster than
+   Reddit does.
 5. **Cross-thread duplicate guard:** don't reuse the same body or a
-   near-identical paraphrase across multiple threads, even on
-   different topics. Each draft must materially engage with its
-   thread's content.
-6. After explicit approval, click/type via the indexed elements
-   (recipe below).
-7. Verify with `browser_get_state` after each write action — re-run
-   the duplicate-check eval before any retry to avoid double-posting
-   on a submit that actually landed but appeared to fail.
-8. Insert randomized 5-30s delays between consecutive writes.
-9. **Log the write to `comments/<timestamp>.md`.** After verification
-   in step 7 confirms the comment landed, write a markdown record.
-   This is the project's running log of what's been said under the
-   operating account and is how product/marketing/engineering get
-   visibility into the HN channel without re-reading every thread.
-
-   Filename: UTC ISO 8601 with no colons, e.g.
-   `comments/2026-04-29T143022Z.md`. Sort order = post order. One file
-   per posted comment (top-level or reply) or submission.
+   near-identical paraphrase across drafts on multiple threads, even
+   on different topics. Each draft must materially engage with its
+   thread's content. Skim `drafts/` and `comments/` before writing.
+6. **Save the draft to `drafts/<timestamp>.md`.** Filename format:
+   UTC `YYYY-MM-DDTHHMMSSZ` (filesystem-safe — no colons in the time
+   portion), same as `comments/`. Example:
+   `drafts/2026-04-29T143022Z.md`. Sort order = draft order. One
+   file per intended post (top-level, reply, or submission).
 
    Required sections:
-   - **HN:** permalink to the *comment* (not just the thread), of the
-     form `https://news.ycombinator.com/item?id=<comment-id>`
-   - **Story / OP / operating account:** one line each
+   - **Status:** `drafted` (awaiting manual post by user). After the
+     user posts, on their request, change to `posted` and add the
+     permalink before moving the file to `comments/`.
+   - **Target:** thread URL (`https://news.ycombinator.com/item?id=<id>`),
+     plus parent comment URL if this is a reply (also of the
+     `item?id=` form). For a story submission, the target is
+     `https://news.ycombinator.com/submit`.
+   - **Story / OP / operating account:** one line each. The
+     operating account is read from the live browser session per
+     "Identity detection" above.
    - **The post:** OP body, or a 2-3 sentence summary if very long.
-     For replies, also include the parent comment being replied to.
-   - **My reply:** the exact text submitted, in a fenced block
+     For replies, also include the parent comment being replied to,
+     verbatim.
+   - **My draft:** the exact text to paste into the HN composer, in
+     a fenced block. ASCII punctuation only.
    - **Insight for the FailProof team:** one observation about the
      thread that's useful for product / marketing / engineering. Not
-     "the comment was good" — something actionable: what framing
+     "the draft is good" — something actionable: what framing
      landed, what gap in the product surfaced, what feature could
      ship from this signal, who else in this thread is asking the
      same question, what blog post would drop into this conversation
      naturally next time.
    - **Notes / findings:** anything else worth recording. HN UI
      quirks, anti-bot signals, sub-thread norms, related threads
-     worth following, mod behavior, downstream replies if any have
-     come in.
+     worth following.
+7. Show the user the draft (filename + body in chat). They post
+   manually from there. After they've posted, they may ask you to
+   migrate the file to `comments/` and append the comment-permalink
+   — wait for that ask; don't proactively rename. The migration is
+   purely a `git mv drafts/<file> comments/<file>` plus an Edit to
+   set Status to `posted` and add the **HN:** permalink line.
+8. **Do NOT click submit, type into a HN textarea, or otherwise
+   interact with a write surface on HN.** The composer recipe below
+   (`Driving the HN comment composer`) is currently inert per
+   `CLAUDE.md` — preserved for the day the rule is lifted, but not
+   to be run today.
 
-   Skipped writes (aborted by duplicate check, guidelines, or user
-   reject) do not get logged here. Only successful posts.
+Aborted drafts (duplicate check, guidelines mismatch, user reject) do
+not get a file. Only saved drafts and posted comments are tracked on
+disk.
 
-#### Driving the HN comment composer (the working recipe)
+#### Driving the HN comment composer (currently inert — drafts-only mode)
+
+**Do not run this flow.** Per `CLAUDE.md` "Drafts only (never post)",
+Claude does not click submit on HN. The recipe below is preserved for
+the day the rule is lifted (it was working as of 2026-04-28: top-level
+comment, reply, edit, submit, vote). When that day comes, the
+draft-file flow above continues to govern *what* gets posted; this
+recipe governs *how*.
 
 Vastly simpler than Reddit's Lexical contentEditable. HN's comment
 composer is a plain server-rendered HTML form — `<textarea>` plus a

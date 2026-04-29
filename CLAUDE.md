@@ -76,6 +76,36 @@ file, not just to mention it in the reply.
 - The profile lives at `C:\Users\Mathrithms\hn-profile` on Windows. Treat
   it as a single-purpose profile — don't navigate it elsewhere mid-session.
 
+## Drafts only (never post)
+
+**Claude does not submit to Hacker News.** No comments, no replies, no
+submissions, no votes, no favorites. The operating account's recent
+activity has been getting marked dead/flagged, so until the user
+explicitly lifts this rule, every reply or post Claude produces is a
+*draft saved to a file in this repo* and the user posts manually.
+
+Concretely:
+
+- Drafts go in `drafts/<timestamp>.md` where timestamp is UTC
+  `YYYY-MM-DDTHHMMSSZ` (filesystem-safe; no colons in the time
+  portion). Same format as `comments/`, e.g.
+  `drafts/2026-04-29T143022Z.md`.
+- One draft file per intended post (top-level comment, reply, or
+  submission).
+- Format mirrors the `comments/` log but reflects pending status. See
+  the draft recipe in [`INSTRUCTIONS.md`](./INSTRUCTIONS.md) "Writes
+  (drafts only)".
+- After the user posts manually, they may ask you to move/rename the
+  file into `comments/` and add the permalink. Don't do that
+  proactively; wait for the user's signal.
+- The HN comment-composer recipe (textarea selectors, base64 inject,
+  click submit) stays documented in `INSTRUCTIONS.md` for the day this
+  rule is lifted. It is currently inert. Don't run it.
+
+Reads, identity probes, duplicate checks, thread research, and search
+sweeps still go through the operating Chrome profile per the rest of
+this file. This rule only restricts the *write* side.
+
 ## Hard rules (non-negotiable)
 
 **Browser-only access — no exceptions, no shortcuts.** Every Hacker News
@@ -122,9 +152,12 @@ when convenient*.
 
 The numbered rules below apply once you are inside that browser session.
 
-1. **Always show drafts before submitting.** For any submission, comment,
-   or reply, produce the full text first and wait for explicit user
-   approval. Do not self-approve.
+1. **Drafts only, never submit.** Per the "Drafts only (never post)"
+   section above, every reply / comment / submission is saved to
+   `drafts/<timestamp>.md` for the user to post manually. Do not click
+   submit, do not type into a HN composer, do not click vote arrows.
+   Produce the full draft text in the file, then surface filename and
+   body to the user.
 2. **Read HN guidelines and the thread context before posting.** HN does
    not have per-subreddit rules — it has a single set of site guidelines
    (`https://news.ycombinator.com/newsguidelines.html`) and FAQ
@@ -194,6 +227,12 @@ The numbered rules below apply once you are inside that browser session.
 
 ## Daily caps (across the whole account)
 
+These ceilings remain in force on the *account*, even though Claude
+itself is currently drafts-only. The user posts manually; remind them of
+the cap when a fresh draft would push the day's count near the limit
+(check the operating account's recent activity via
+`/threads?id=<handle>` before drafting if they're posting heavily).
+
 - ≤ 2 submissions/day (HN front page is competitive; new accounts
   watched closely; flame-bait detector is sensitive)
 - ≤ 10 comments/day
@@ -202,7 +241,8 @@ The numbered rules below apply once you are inside that browser session.
 - No favorites cap (not detection-relevant), but don't binge-favorite
   either
 
-If asked to exceed these, refuse and explain.
+If asked to draft something that would exceed these once posted, surface
+the count and let the user decide.
 
 ## How to use the browser-use MCP
 
