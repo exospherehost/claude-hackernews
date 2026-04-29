@@ -262,16 +262,18 @@ duplicate. Concrete recipe:
 
 ```bash
 THREAD_ID=<id-from-news.ycombinator.com/item?id=...>
-# Local logs (current branch).
-grep -rl "id=$THREAD_ID" comments/ drafts/ 2>/dev/null
+# Local logs (current branch). Anchor on item?id= so the THREAD_ID
+# can't false-match a substring elsewhere (handle name, body text,
+# different field).
+grep -rl "item?id=$THREAD_ID" comments/ drafts/ 2>/dev/null
 
 # Open PRs (drafts on other branches). gh pr diff shows the patch;
-# if a draft for this thread is in flight there, it will mention the
-# thread ID in the new draft file.
+# if a draft for this thread is in flight there, it will mention
+# the thread ID as part of an item URL in the new draft file.
 gh pr list --state open --json number --jq '.[].number' \
   | while read pr; do
       gh pr diff "$pr" 2>/dev/null \
-        | grep -q "id=$THREAD_ID" \
+        | grep -q "item?id=$THREAD_ID" \
         && echo "PR #$pr already covers id=$THREAD_ID"
     done
 ```
@@ -300,11 +302,17 @@ The flow:
    themselves into a duplicate. Snippet:
    ```js
    (()=>{
-     const handle = OPERATING_HANDLE.toLowerCase();
+     // Read the operating handle off the page header (same source as
+     // the identity-detection snippet earlier), then look for any
+     // comment-row author link matching it. Self-contained, no
+     // OPERATING_HANDLE substitution needed.
+     const me = document.querySelector('span.pagetop a[href^="user?id="]');
+     if (!me) return JSON.stringify({error: "not logged in"});
+     const handle = me.textContent.trim().toLowerCase();
      // HN: each comment header has <a class="hnuser" href="user?id=<handle>">.
      const matches = Array.from(document.querySelectorAll('a.hnuser'))
        .filter(a => (a.textContent || '').trim().toLowerCase() === handle);
-     return JSON.stringify({already_commented: matches.length > 0, by_count: matches.length});
+     return JSON.stringify({handle, already_commented: matches.length > 0, by_count: matches.length});
    })()
    ```
    Also re-run the three-surface coverage scan from the search
@@ -322,8 +330,9 @@ The flow:
    near-identical paraphrase across drafts on multiple threads, even
    on different topics. Each draft must materially engage with its
    thread's content. Skim `drafts/` and `comments/` before writing.
-6. **Save the draft to `drafts/<UTC-ISO-8601>.md`.** Filename format
-   same as `comments/`, no colons, e.g.
+6. **Save the draft to `drafts/<timestamp>.md`.** Filename format:
+   UTC `YYYY-MM-DDTHHMMSSZ` (filesystem-safe — no colons in the time
+   portion), same as `comments/`. Example:
    `drafts/2026-04-29T143022Z.md`. Sort order = draft order. One
    file per intended post (top-level, reply, or submission).
 

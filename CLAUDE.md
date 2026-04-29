@@ -86,8 +86,10 @@ explicitly lifts this rule, every reply or post Claude produces is a
 
 Concretely:
 
-- Drafts go in `drafts/<UTC-ISO-8601>.md` (filename format same as
-  `comments/`, no colons, e.g. `drafts/2026-04-29T143022Z.md`).
+- Drafts go in `drafts/<timestamp>.md` where timestamp is UTC
+  `YYYY-MM-DDTHHMMSSZ` (filesystem-safe; no colons in the time
+  portion). Same format as `comments/`, e.g.
+  `drafts/2026-04-29T143022Z.md`.
 - One draft file per intended post (top-level comment, reply, or
   submission).
 - Format mirrors the `comments/` log but reflects pending status. See
