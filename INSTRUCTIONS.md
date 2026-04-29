@@ -148,6 +148,38 @@ Same file also holds `keep_alive: true` so the MCP doesn't try to close
 the running Chrome on shutdown. If you change Chrome's port, edit that
 file too — not just `.mcp.json`.
 
+**Concrete trap (observed 2026-04-28):** that config file is shared
+across harnesses on this machine, and the Reddit harness sets it to
+`http://127.0.0.1:9333`. So in HN sessions the MCP boots pointing at
+the Reddit port, every primitive errors with
+`connect() timed out after 15s — CDP connection to http://127.0.0.1:9333`,
+and the `--cdp-url 9334` flag on the MCP command line buys you nothing.
+Two acceptable workarounds:
+
+1. Drive the entire session via the `browser-use` CLI subprocess (it
+   honors `--cdp-url` directly). This is the path documented in
+   `CLAUDE.md` for "MCP primitives are buggy" and works end-to-end —
+   open / state / eval / click / type / scroll. The whole HN reply
+   flow is pure CLI-friendly.
+2. Before starting Claude Code, edit
+   `~/.config/browseruse/config.json` so `browser_profile.<default>.cdp_url`
+   reads `http://127.0.0.1:9334`, then start Chrome (`scripts/win-chrome.sh`),
+   then start Claude Code so the MCP boots clean. Don't forget to
+   reset to 9333 if you switch back to the Reddit harness.
+
+The right long-term fix is per-profile config files (a
+`browser-use --config <path>` flag) so the two harnesses don't fight
+over a single global. Until then, default to option 1 — CLI subprocess
+form is reliable and doesn't need any global-state edits.
+
+**MCP / CLI session-lock conflict.** If the MCP is alive (even if
+wedged) and the CLI is also being driven, you can hit
+`Session 'default' is already running with different config. Run
+\`browser-use close\` first.` on the *second* CLI invocation in a
+session. Resolve by running `browser-use --cdp-url … close` once, then
+re-issue the command. Doesn't recur within the same `open` -> `eval`
+-> `click` chain — only when the MCP grabs the session in between.
+
 ### Reads (research, listing, summarizing)
 
 Use the same primitives a human would:
@@ -466,7 +498,7 @@ Each policy returns one of:
 
 ### Headline features
 
-- **32 built-in policies** for the common agent failure modes — destructive
+- **39 built-in policies** for the common agent failure modes - destructive
   commands, secret leakage, working outside project bounds, pushes to
   protected branches, accidental publishes, etc.
 - **Custom policies in JavaScript** via the `allow` / `deny` / `instruct`
@@ -553,9 +585,11 @@ The `ctx` object exposes: `eventType`, `toolName`, `toolInput`, `payload`,
   replicate it by wiring hooks yourself — failproofai is the
   batteries-included version.
 - **"Does it work with Cursor / Aider / continue.dev / Cline?"** Today
-  the officially supported surfaces are Claude Code and the Anthropic
-  Agents SDK. Other agents only work if they call the same hook
-  protocol.
+  the officially supported surfaces are Claude Code, OpenAI Codex, and
+  the Anthropic Agents SDK. Install hooks for both via
+  `failproofai policies --install --cli claude codex` (omit `--cli` to
+  auto-detect). Other agents only work if they call the same hook
+  protocol. GitHub Copilot CLI integration is in beta (PR #236).
 - **"What's the performance overhead?"** Hooks run as a Node subprocess
   per tool call. Negligible for normal use; expensive custom policies
   will be felt.
