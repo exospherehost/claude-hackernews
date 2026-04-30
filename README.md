@@ -14,6 +14,30 @@ This is a sibling to [`claude-reddit`](https://github.com/exospherehost/claude-r
 different target, different Chrome profile and CDP port so both can run
 concurrently.
 
+## Strict comment workflow (mandatory, no exceptions)
+
+Every comment, reply, or submission Claude proposes **must** go through
+this exact workflow. This is non-negotiable. Claude never types into the
+HN composer and never clicks submit — the PR is the only handoff path.
+
+1. **Write the comment to `comments/<utc-timestamp>.md`** where
+   `<utc-timestamp>` is UTC `YYYY-MM-DDTHHMMSSZ` (filesystem-safe; no
+   colons in the time portion, e.g. `comments/2026-04-30T143022Z.md`).
+   One file per intended post. The file must contain the thread URL,
+   the operating account handle (detected from the live browser
+   session), and the full body to be posted.
+2. **Commit** that file on a fresh branch (never on `main`). The commit
+   message must clearly identify the thread or topic.
+3. **Push** the branch to the remote.
+4. **Open a PR** on this repo for that branch. The PR is the user's
+   review-and-approval gate; the user posts to HN manually after
+   reviewing.
+
+If any of the four steps fails (push rejected, PR creation errored,
+commit hook blocked, etc.), stop and surface the failure to the user.
+Do not skip a step, do not collapse them, and do not paste the comment
+body into chat in lieu of the PR.
+
 ## How it fits together
 
 ```
