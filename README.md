@@ -202,9 +202,12 @@ Defined in [`CLAUDE.md`](CLAUDE.md). Headlines:
 ├── .failproofai/policies-config.json  # which policies are enabled
 ├── scripts/
 │   ├── launch-hn-chrome.ps1           # Windows-side Chrome launcher
-│   ├── win-chrome.sh                  # WSL → powershell.exe wrapper
-│   └── verify-cdp.sh                  # CDP smoke test from WSL
-└── comments/                          # log of posted comments (one .md per post)
+│   ├── launch-hn-chrome-close.ps1     # Windows-side Chrome stopper (end-of-run)
+│   ├── win-chrome.sh                  # WSL → powershell.exe launch wrapper
+│   ├── win-chrome-close.sh            # WSL → powershell.exe close wrapper
+│   ├── verify-cdp.sh                  # CDP smoke test from WSL
+│   └── hourly_hackernews_cron.py      # hourly cron driver (Discord-logged)
+└── comments/                          # comment artifacts (drafts handed off via PR)
 ```
 
 ## Troubleshooting
@@ -263,9 +266,23 @@ other's tabs, double-check `.mcp.json` in each repo is on its own port.
   the temptation to reach for them is real. Resist. Account-safety reason:
   side-channel reads from a non-browser fingerprint correlate with the
   browsing session and flag faster on HN than they do on Reddit.
+- **Scheduled jobs** — `scripts/hourly_hackernews_cron.py` is the hourly
+  trigger (mirror of claude-reddit's `hourly_reddit_cron.py`). Wire it
+  into system cron and it'll bring Chrome up via `scripts/win-chrome.sh`,
+  poll `scripts/verify-cdp.sh` until CDP is reachable, then shell out to
+  `luv claude-hackernews "<prompt>" -nit` inside the working-hours
+  window with a randomized pre-run sleep. The default prompt enforces
+  the strict comment workflow above (drafts to `comments/` + commit +
+  push + PR; never submits to HN). Run from a dedicated `.cron/` clone
+  the same way the Reddit harness does. End-of-run Chrome cleanup is
+  the agent's responsibility via `scripts/win-chrome-close.sh` (see the
+  "End-of-run cleanup" section in `INSTRUCTIONS.md`).
+- **Logging destination** — lifecycle events (start / skip / ok / fail)
+  go to a Discord webhook, **not** healthchecks.io or any other
+  uptime-style ping service. Set `CRON_DISCORD_WEBHOOK_URL` in the
+  crontab line; leave it empty to disable. Long bodies attach as
+  `cron.log` via multipart so nothing is truncated. If you also run the
+  sibling claude-reddit cron on the same machine, give each cron line
+  its own webhook URL so HN and Reddit events land in separate channels.
 - **Tests / CI** — none yet. The "tests" are the verification steps in
   this README plus the playbooks themselves.
-- **Scheduled jobs** — planned for after the ad-hoc flow is reliable; will
-  port `hourly_reddit_cron.py` from claude-reddit to a sibling
-  `hourly_hackernews_cron.py` and run from a dedicated `.cron/` clone, the
-  same way the Reddit harness does.
