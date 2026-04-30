@@ -180,6 +180,34 @@ session. Resolve by running `browser-use --cdp-url … close` once, then
 re-issue the command. Doesn't recur within the same `open` -> `eval`
 -> `click` chain — only when the MCP grabs the session in between.
 
+### End-of-run cleanup (close the browser)
+
+Before exiting any **cron-driven or otherwise unattended** task, close
+the operating Chrome instance. The browser holds a logged-in HN
+account session; leaving it running 24/7 between hourly cron runs is a
+detection liability (idle session cookie, browser telemetry, visible
+HN window on the Windows host).
+
+**Last step of every run, after all artifacts (comment draft in
+`comments/<ts>.md`, commit, push, PR) are flushed and the PR URL is
+captured:**
+
+```bash
+bash scripts/win-chrome-close.sh
+```
+
+That shells out to a PowerShell `Stop-Process -Force` against any
+chrome.exe whose CommandLine contains the hn-profile user-data-dir.
+Idempotent - safe to call when Chrome isn't running. Same predicate
+as `launch-hn-chrome.ps1`'s "already running" check, so the match is
+byte-identical.
+
+This pairs with `scripts/hourly_hackernews_cron.py`: the cron brings
+Chrome up at the start of each run; the agent tears it down at the
+end. Skipping the close step leaks a Chrome process that the next
+cron tick will treat as "already running" and refuse to relaunch,
+which would silently break the next hour's run.
+
 ### Reads (research, listing, summarizing)
 
 Use the same primitives a human would:
