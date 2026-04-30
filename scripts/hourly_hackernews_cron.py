@@ -26,19 +26,23 @@ Stop-Process is required, and (b) bringing Chrome up here (before the
 MCP boots) sidesteps the "MCP launch order" trap documented in
 CLAUDE.md.
 
-HN runs are drafts-only by policy (see CLAUDE.md "Drafts only (never
-post)" and README.md "Strict comment workflow"). The default LUV_PROMPT
-asks the agent to find a relevant thread, write the proposed reply to
-comments/<utc-timestamp>.md, commit on a fresh branch, push, and open a
-PR for human review. The agent never types into the HN composer or
-clicks submit.
+HN runs are PR-only by policy (see CLAUDE.md "Comments via PR (never
+direct post)" and README.md "Strict comment workflow"). The default
+LUV_PROMPT asks the agent to find a relevant thread, write the proposed
+reply to comments/<utc-timestamp>.md, commit on a fresh branch, push,
+and open a PR for human review. The agent never types into the HN
+composer or clicks submit.
 
 Monitoring posts to a Discord webhook (one message per lifecycle event):
 
     start           -- "this run started"
     skip            -- "outside working hours"
     chrome-fail     -- Chrome bring-up failed
-    ok              -- luv finished OK (body = full output + log buffer)
+    ok              -- luv finished OK AND a new PR was opened on GH_REPO
+                       this run (body = full output + log buffer + PR URL)
+    noop            -- luv finished OK but no new PR appeared (body =
+                       full output + log buffer); yellow embed so silent
+                       no-ops are visible to the operator
     fail            -- luv finished non-zero (body = full output + log buffer)
 
 Each event is a colored Discord embed. If the body exceeds Discord's
@@ -143,6 +147,15 @@ LUV_PROMPT = _env_str(
 # Hard wall on how long luv may run before we kill it and report failure.
 LUV_TIMEOUT_SECONDS = _env_int("CRON_LUV_TIMEOUT_SECONDS", 45 * 60)
 
+# GitHub repo (owner/name) the agent is expected to open PRs against. Used
+# by the no-op detector below: cron snapshots PR numbers before / after the
+# run, and a green "ok" only fires when a new PR appeared. Any clean luv
+# exit without a new PR posts a yellow "noop" instead, so silent dead-ends
+# are visible.
+GH_REPO = _env_str("CRON_GH_REPO", "exospherehost/claude-hackernews")
+GH_PR_LIST_TIMEOUT_SECONDS = _env_int("CRON_GH_PR_LIST_TIMEOUT_SECONDS", 30)
+GH_PR_LIST_LIMIT = _env_int("CRON_GH_PR_LIST_LIMIT", 200)
+
 # Discord webhook URL. Empty = no posting.
 # Format:
 #   https://discord.com/api/webhooks/<id>/<token>
@@ -178,6 +191,7 @@ _DISCORD_COLORS = {
     "start": 0x3498DB,  # blue
     "skip":  0x95A5A6,  # gray
     "ok":    0x2ECC71,  # green
+    "noop":  0xF1C40F,  # yellow -- ran clean but produced no PR
     "fail":  0xE74C3C,  # red
 }
 
@@ -375,6 +389,56 @@ def _run_luv() -> tuple[int, str]:
     )
 
 
+def _snapshot_pr_numbers() -> set[int] | None:
+    """Return the set of PR numbers (any state) currently on GH_REPO.
+
+    Returns None on any failure (gh missing, auth lapsed, network
+    hiccup, timeout, non-zero exit, malformed output). The caller treats
+    None as "couldn't tell" and posts a noop event rather than risk a
+    false-positive "new PR" diff (e.g. failed before-snapshot + clean
+    after-snapshot would otherwise look like every existing PR was new).
+    """
+    try:
+        proc = subprocess.run(
+            [
+                "gh", "pr", "list",
+                "--repo", GH_REPO,
+                "--state", "all",
+                "--limit", str(GH_PR_LIST_LIMIT),
+                "--json", "number",
+                "--jq", ".[].number",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=GH_PR_LIST_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except FileNotFoundError:
+        _log("gh binary not found on PATH; skipping PR-diff snapshot")
+        return None
+    except subprocess.TimeoutExpired:
+        _log(f"gh pr list timed out after {GH_PR_LIST_TIMEOUT_SECONDS}s")
+        return None
+
+    if proc.returncode != 0:
+        _log(
+            f"gh pr list exit {proc.returncode}: "
+            f"{(proc.stderr or proc.stdout).strip()[:200]}"
+        )
+        return None
+
+    nums: set[int] = set()
+    for ln in proc.stdout.splitlines():
+        ln = ln.strip()
+        if not ln:
+            continue
+        try:
+            nums.add(int(ln))
+        except ValueError:
+            continue
+    return nums
+
+
 # --------------------------------------------------------------------------
 # Main.
 # --------------------------------------------------------------------------
@@ -422,23 +486,56 @@ def main() -> int:
         )
         return 2
 
+    prs_before = _snapshot_pr_numbers()
+    _log(
+        f"PR snapshot before run on {GH_REPO}: "
+        f"{'unavailable' if prs_before is None else f'{len(prs_before)} PRs'}"
+    )
+
     rc, output = _run_luv()
     _log(f"luv finished with exit {rc}")
     print(output, flush=True)
 
-    if rc == 0:
+    if rc != 0:
         _discord_notify(
-            "ok",
-            "claude-hackernews cron - run finished OK",
+            "fail",
+            f"claude-hackernews cron - run failed (exit {rc})",
             _compose_body(output),
         )
+        return rc
+
+    prs_after = _snapshot_pr_numbers()
+    if prs_before is None or prs_after is None:
+        new_prs: list[int] = []
+        _log(
+            "PR snapshot incomplete (before or after query failed); "
+            "treating run as noop to avoid false-positive new-PR claim"
+        )
+    else:
+        new_prs = sorted(prs_after - prs_before)
+        _log(
+            f"PR snapshot after run on {GH_REPO}: {len(prs_after)} PRs "
+            f"(new this run: {new_prs or 'none'})"
+        )
+
+    if new_prs:
+        pr_lines = "\n".join(
+            f"https://github.com/{GH_REPO}/pull/{n}" for n in new_prs
+        )
+        body = f"{output}\n\n--- new PRs opened this run ---\n{pr_lines}"
+        title = (
+            f"claude-hackernews cron - run finished OK "
+            f"({len(new_prs)} new PR{'s' if len(new_prs) != 1 else ''})"
+        )
+        _discord_notify("ok", title, _compose_body(body))
         return 0
+
     _discord_notify(
-        "fail",
-        f"claude-hackernews cron - run failed (exit {rc})",
+        "noop",
+        "claude-hackernews cron - run finished OK but no new PR was opened",
         _compose_body(output),
     )
-    return rc
+    return 0
 
 
 if __name__ == "__main__":

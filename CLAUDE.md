@@ -76,31 +76,44 @@ file, not just to mention it in the reply.
 - The profile lives at `C:\Users\Mathrithms\hn-profile` on Windows. Treat
   it as a single-purpose profile — don't navigate it elsewhere mid-session.
 
-## Drafts only (never post)
+## Comments via PR (never direct post)
 
 **Claude does not submit to Hacker News.** No comments, no replies, no
 submissions, no votes, no favorites. The operating account's recent
 activity has been getting marked dead/flagged, so until the user
 explicitly lifts this rule, every reply or post Claude produces is a
-*draft saved to a file in this repo* and the user posts manually.
+*comment file committed on a fresh branch and surfaced via a PR* for
+the user to review and post manually. The PR is the only handoff path.
 
-Concretely:
+Concretely, every proposed comment / reply / submission must follow this
+exact four-step workflow (also documented in `README.md` "Strict comment
+workflow"):
 
-- Drafts go in `drafts/<timestamp>.md` where timestamp is UTC
-  `YYYY-MM-DDTHHMMSSZ` (filesystem-safe; no colons in the time
-  portion). Same format as `comments/`, e.g.
-  `drafts/2026-04-29T143022Z.md`.
-- One draft file per intended post (top-level comment, reply, or
-  submission).
-- Format mirrors the `comments/` log but reflects pending status. See
-  the draft recipe in [`INSTRUCTIONS.md`](./INSTRUCTIONS.md) "Writes
-  (drafts only)".
-- After the user posts manually, they may ask you to move/rename the
-  file into `comments/` and add the permalink. Don't do that
-  proactively; wait for the user's signal.
-- The HN comment-composer recipe (textarea selectors, base64 inject,
-  click submit) stays documented in `INSTRUCTIONS.md` for the day this
-  rule is lifted. It is currently inert. Don't run it.
+1. **Write** the post to `comments/<utc-timestamp>.md` where
+   `<utc-timestamp>` is UTC `YYYY-MM-DDTHHMMSSZ` (filesystem-safe; no
+   colons in the time portion). Example:
+   `comments/2026-04-30T143022Z.md`. One file per intended post
+   (top-level comment, reply, or submission). The file must contain
+   the thread URL, the operating account handle (detected from the
+   live browser session), and the full body to be posted. Format /
+   required sections live in [`INSTRUCTIONS.md`](./INSTRUCTIONS.md)
+   "Writes (comments via PR)".
+2. **Commit** that file on a fresh branch (never on `main`). The commit
+   message clearly identifies the thread or topic.
+3. **Push** the branch to the remote.
+4. **Open a PR** on this repo for that branch. The PR is the user's
+   review-and-approval gate; the user posts to HN manually after
+   reviewing, then merges the PR (merge = "I posted it"). Surface the
+   PR URL back in chat.
+
+If any of the four steps fails (push rejected, PR creation errored,
+commit hook blocked, etc.), stop and surface the failure to the user.
+Do not skip a step, do not collapse them, and do not paste the comment
+body into chat in lieu of the PR.
+
+The HN comment-composer recipe (textarea selectors, base64 inject,
+click submit) stays documented in `INSTRUCTIONS.md` for the day this
+rule is lifted. It is currently inert. Don't run it.
 
 Reads, identity probes, duplicate checks, thread research, and search
 sweeps still go through the operating Chrome profile per the rest of
@@ -152,12 +165,13 @@ when convenient*.
 
 The numbered rules below apply once you are inside that browser session.
 
-1. **Drafts only, never submit.** Per the "Drafts only (never post)"
-   section above, every reply / comment / submission is saved to
-   `drafts/<timestamp>.md` for the user to post manually. Do not click
-   submit, do not type into a HN composer, do not click vote arrows.
-   Produce the full draft text in the file, then surface filename and
-   body to the user.
+1. **Comments via PR, never submit.** Per the "Comments via PR (never
+   direct post)" section above, every reply / comment / submission is
+   saved to `comments/<utc-timestamp>.md`, committed on a fresh branch,
+   pushed, and surfaced as a PR for the user to review and post
+   manually. Do not click submit, do not type into a HN composer, do
+   not click vote arrows. Produce the full text in the file, complete
+   the four-step PR workflow, then surface the PR URL to the user.
 2. **Read HN guidelines and the thread context before posting.** HN does
    not have per-subreddit rules — it has a single set of site guidelines
    (`https://news.ycombinator.com/newsguidelines.html`) and FAQ
@@ -228,10 +242,11 @@ The numbered rules below apply once you are inside that browser session.
 ## Daily caps (across the whole account)
 
 These ceilings remain in force on the *account*, even though Claude
-itself is currently drafts-only. The user posts manually; remind them of
-the cap when a fresh draft would push the day's count near the limit
-(check the operating account's recent activity via
-`/threads?id=<handle>` before drafting if they're posting heavily).
+itself only produces PR-reviewed comment files (never direct posts).
+The user posts manually; remind them of the cap when a fresh proposed
+comment would push the day's count near the limit (check the operating
+account's recent activity via `/threads?id=<handle>` before drafting if
+they're posting heavily).
 
 - ≤ 2 submissions/day (HN front page is competitive; new accounts
   watched closely; flame-bait detector is sensitive)

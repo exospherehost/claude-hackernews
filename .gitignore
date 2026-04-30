@@ -11,6 +11,7 @@ screenshots/
 *.jpg
 *.jpeg
 
+drafts/
 queue/
 
 .DS_Store
