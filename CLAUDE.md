@@ -82,17 +82,28 @@ file, not just to mention it in the reply.
 submissions, no votes, no favorites. The operating account's recent
 activity has been getting marked dead/flagged, so until the user
 explicitly lifts this rule, every reply or post Claude produces is a
-*comment file committed on a fresh branch and surfaced via a PR* for
+*draft file committed on a fresh branch and surfaced via a PR* for
 the user to review and post manually. The PR is the only handoff path.
+
+Two top-level directories carry the artifacts:
+
+- `drafts/<utc-timestamp>.md` — proposed-but-unposted reply / comment /
+  submission. **This is what Claude writes.** Committed on a fresh
+  branch, pushed, and opened as a PR for the user to review and post
+  manually.
+- `comments/<utc-timestamp>.md` — log of replies that were *actually
+  posted on HN*. Claude does not write here on its own; a new entry
+  appears only when the user (after posting manually) asks for the
+  posted reply to be logged with its permalink.
 
 Concretely, every proposed comment / reply / submission must follow this
 exact four-step workflow (also documented in `README.md` "Strict comment
 workflow"):
 
-1. **Write** the post to `comments/<utc-timestamp>.md` where
+1. **Write** the post to `drafts/<utc-timestamp>.md` where
    `<utc-timestamp>` is UTC `YYYY-MM-DDTHHMMSSZ` (filesystem-safe; no
    colons in the time portion). Example:
-   `comments/2026-04-30T143022Z.md`. One file per intended post
+   `drafts/2026-04-30T143022Z.md`. One file per intended post
    (top-level comment, reply, or submission). The file must contain
    the thread URL, the operating account handle (detected from the
    live browser session), and the full body to be posted. Format /
@@ -167,7 +178,7 @@ The numbered rules below apply once you are inside that browser session.
 
 1. **Comments via PR, never submit.** Per the "Comments via PR (never
    direct post)" section above, every reply / comment / submission is
-   saved to `comments/<utc-timestamp>.md`, committed on a fresh branch,
+   saved to `drafts/<utc-timestamp>.md`, committed on a fresh branch,
    pushed, and surfaced as a PR for the user to review and post
    manually. Do not click submit, do not type into a HN composer, do
    not click vote arrows. Produce the full text in the file, complete

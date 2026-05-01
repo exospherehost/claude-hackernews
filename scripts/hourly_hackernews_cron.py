@@ -29,9 +29,10 @@ CLAUDE.md.
 HN runs are PR-only by policy (see CLAUDE.md "Comments via PR (never
 direct post)" and README.md "Strict comment workflow"). The default
 LUV_PROMPT asks the agent to find a relevant thread, write the proposed
-reply to comments/<utc-timestamp>.md, commit on a fresh branch, push,
+reply to drafts/<utc-timestamp>.md, commit on a fresh branch, push,
 and open a PR for human review. The agent never types into the HN
-composer or clicks submit.
+composer or clicks submit. (The sibling comments/ directory is the log
+of replies that were actually posted on HN -- not a write target.)
 
 Monitoring posts to a Discord webhook (one message per lifecycle event):
 
@@ -142,14 +143,14 @@ LUV_PROMPT = _env_str(
     "memorized links) where a user is hitting a problem failproofai would "
     "help. Draft a reply per brand voice and ASCII-only punctuation. Do "
     "NOT click submit on HN, do not type into the composer. Write the "
-    "draft to comments/<UTC-ISO>.md per INSTRUCTIONS.md `Writes (comments "
-    "via PR)` step 6 with **Status:** draft (pending manual post). Then "
-    "commit the draft on the working branch (message: '[claude-hackernews] "
-    "draft: <short topic>'), push the branch, and open a pull request via "
-    "`gh pr create` with the draft as the payload and the discovery + "
-    "thread URLs in the body. One draft, one commit, one PR - never "
-    "bundle. Surface the PR URL and the draft file path in your final "
-    "reply.",
+    "draft to drafts/<UTC-ISO>.md (NOT comments/ -- that's the posted-"
+    "reply log) per INSTRUCTIONS.md `Writes (comments via PR)` step 6 "
+    "with **Status:** draft (pending manual post). Then commit the draft "
+    "on the working branch (message: '[claude-hackernews] draft: <short "
+    "topic>'), push the branch, and open a pull request via `gh pr "
+    "create` with the draft as the payload and the discovery + thread "
+    "URLs in the body. One draft, one commit, one PR - never bundle. "
+    "Surface the PR URL and the draft file path in your final reply.",
 )
 
 # Hard wall on how long luv may run before we kill it and report failure.
