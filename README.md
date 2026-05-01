@@ -20,12 +20,14 @@ Every comment, reply, or submission Claude proposes **must** go through
 this exact workflow. This is non-negotiable. Claude never types into the
 HN composer and never clicks submit — the PR is the only handoff path.
 
-1. **Write the comment to `comments/<utc-timestamp>.md`** where
+1. **Write the comment to `drafts/<utc-timestamp>.md`** where
    `<utc-timestamp>` is UTC `YYYY-MM-DDTHHMMSSZ` (filesystem-safe; no
-   colons in the time portion, e.g. `comments/2026-04-30T143022Z.md`).
+   colons in the time portion, e.g. `drafts/2026-04-30T143022Z.md`).
    One file per intended post. The file must contain the thread URL,
    the operating account handle (detected from the live browser
-   session), and the full body to be posted.
+   session), and the full body to be posted. (`comments/` is a
+   separate directory used as a log of replies that were actually
+   posted on HN — Claude does not write there on its own.)
 2. **Commit** that file on a fresh branch (never on `main`). The commit
    message must clearly identify the thread or topic.
 3. **Push** the branch to the remote.
@@ -168,9 +170,10 @@ Highlights:
   threads?id=, hn.algolia.com search UI), search query patterns.
 - **Writes** — comment composer recipe (HN's plain `<textarea>`, vastly
   simpler than Reddit's Lexical), submission flow, vote/favorite.
-- **Output artifact** — every successful post lands as
-  `comments/<utc-timestamp>.md` with the same shape as the
-  claude-reddit log.
+- **Output artifact** — every proposed reply lands as
+  `drafts/<utc-timestamp>.md` (committed and surfaced via PR for
+  manual posting); the `comments/` directory is a separate log of
+  replies that were actually posted on HN.
 - **About FailProof AI** — product context for HN-bound replies.
 
 To extend a playbook: edit the relevant section of `INSTRUCTIONS.md`
@@ -207,7 +210,8 @@ Defined in [`CLAUDE.md`](CLAUDE.md). Headlines:
 │   ├── win-chrome-close.sh            # WSL → powershell.exe close wrapper
 │   ├── verify-cdp.sh                  # CDP smoke test from WSL
 │   └── hourly_hackernews_cron.py      # hourly cron driver (Discord-logged)
-└── comments/                          # comment artifacts (drafts handed off via PR)
+├── drafts/                            # proposed replies awaiting manual post (tracked; surfaced via PR)
+└── comments/                          # log of replies that were actually posted on HN
 ```
 
 ## Troubleshooting
@@ -272,7 +276,7 @@ other's tabs, double-check `.mcp.json` in each repo is on its own port.
   poll `scripts/verify-cdp.sh` until CDP is reachable, then shell out to
   `luv claude-hackernews "<prompt>" -nit` inside the working-hours
   window with a randomized pre-run sleep. The default prompt enforces
-  the strict comment workflow above (drafts to `comments/` + commit +
+  the strict comment workflow above (drafts to `drafts/` + commit +
   push + PR; never submits to HN). Run from a dedicated `.cron/` clone
   the same way the Reddit harness does. End-of-run Chrome cleanup is
   the agent's responsibility via `scripts/win-chrome-close.sh` (see the

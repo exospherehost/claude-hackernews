@@ -189,7 +189,7 @@ detection liability (idle session cookie, browser telemetry, visible
 HN window on the Windows host).
 
 **Last step of every run, after all artifacts (comment draft in
-`comments/<ts>.md`, commit, push, PR) are flushed and the PR URL is
+`drafts/<ts>.md`, commit, push, PR) are flushed and the PR URL is
 captured:**
 
 ```bash
@@ -274,14 +274,16 @@ Rotate the search query across sessions so the same query doesn't
 appear in the account's history twice in a row (`CLAUDE.md` rule 8 on
 read cadence).
 
-**Before picking a thread to comment on, scan two surfaces for prior
+**Before picking a thread to comment on, scan three surfaces for prior
 coverage:**
 
-- `comments/` on the current branch — already-PR-reviewed-or-posted by
-  the operating account.
+- `drafts/` on the current branch — proposed reply files Claude has
+  already written here, awaiting manual post.
+- `comments/` on the current branch — log of replies that were
+  actually posted on HN by the operating account.
 - Open PRs on this repo — proposed comments on *other* branches,
   pending user review/post. Each PR commits a
-  `comments/<timestamp>.md`, so the thread ID surfaces in the diff.
+  `drafts/<timestamp>.md`, so the thread ID surfaces in the diff.
 
 Don't drift into the writing step on a thread one of those already
 covers — the user would just be re-posting themselves into a
@@ -291,8 +293,9 @@ duplicate. Concrete recipe:
 THREAD_ID=<id-from-news.ycombinator.com/item?id=...>
 # Local logs (current branch). Anchor on item?id= so the THREAD_ID
 # can't false-match a substring elsewhere (handle name, body text,
-# different field).
-grep -rl "item?id=$THREAD_ID" comments/ 2>/dev/null
+# different field). Scan both drafts/ (in flight) and comments/
+# (already posted).
+grep -rl "item?id=$THREAD_ID" drafts/ comments/ 2>/dev/null
 
 # Open PRs (proposed comments on other branches). gh pr diff shows the
 # patch; if a comment for this thread is in flight there, it will
@@ -313,10 +316,16 @@ check (Writes step 3) as a belt-and-suspenders.
 
 **Per `CLAUDE.md` "Comments via PR (never direct post)", Claude does not
 submit to HN.** Every "write" — top-level comment, reply, story
-submission — is produced as a `comments/<utc-timestamp>.md` file,
+submission — is produced as a `drafts/<utc-timestamp>.md` file,
 committed on a fresh branch, pushed, and surfaced as a PR. The user
 reviews on GitHub, posts manually to HN, then merges the PR. Voting and
 favoriting are also paused.
+
+The sibling `comments/` directory is a *log of replies that were
+actually posted on HN*, not a write target. A new file lands there
+only when the user (after posting manually) asks for the posted reply
+to be logged with its permalink. Claude does not write to `comments/`
+on its own.
 
 The flow:
 
@@ -344,13 +353,13 @@ The flow:
      return JSON.stringify({handle, already_commented: matches.length > 0, by_count: matches.length});
    })()
    ```
-   Also re-run the two-surface coverage scan from the search section
-   above (`comments/` on the current branch, and open PRs on this
-   repo) for an entry pointing at the same thread ID. If any surface
-   matches, abort the write and surface the existing coverage to the
-   user. (This duplicates the pre-selection check on purpose: a fresh
-   PR might have landed on another branch since you picked the
-   thread.)
+   Also re-run the three-surface coverage scan from the search section
+   above (`drafts/` and `comments/` on the current branch, and open
+   PRs on this repo) for an entry pointing at the same thread ID. If
+   any surface matches, abort the write and surface the existing
+   coverage to the user. (This duplicates the pre-selection check on
+   purpose: a fresh PR might have landed on another branch since you
+   picked the thread.)
 4. Write the full text. **No em-dashes, en-dashes, fancy ellipses,
    curly quotes, or unicode arrows** (rule from `CLAUDE.md` brand
    voice). HN pattern-matches these to LLM output even faster than
@@ -358,13 +367,15 @@ The flow:
 5. **Cross-thread duplicate guard:** don't reuse the same body or a
    near-identical paraphrase across proposed comments on multiple
    threads, even on different topics. Each comment must materially
-   engage with its thread's content. Skim `comments/` (current
-   branch) and the diffs of open PRs before writing.
-6. **Save the comment to `comments/<utc-timestamp>.md`.** Filename
+   engage with its thread's content. Skim `drafts/` and `comments/`
+   (current branch) and the diffs of open PRs before writing.
+6. **Save the comment to `drafts/<utc-timestamp>.md`.** Filename
    format: UTC `YYYY-MM-DDTHHMMSSZ` (filesystem-safe — no colons in
-   the time portion). Example: `comments/2026-04-30T143022Z.md`.
+   the time portion). Example: `drafts/2026-04-30T143022Z.md`.
    Sort order = creation order. One file per intended post
-   (top-level, reply, or submission).
+   (top-level, reply, or submission). Do not write into `comments/` —
+   that's the posted-reply log, populated only when the user asks for
+   a posted comment to be archived.
 
    Required sections:
    - **HN:** thread URL (`https://news.ycombinator.com/item?id=<id>`),
@@ -394,7 +405,7 @@ The flow:
 7. **Commit, push, open PR.** The four-step workflow from `CLAUDE.md`
    "Comments via PR (never direct post)" and `README.md` "Strict
    comment workflow":
-   - Commit the new `comments/<ts>.md` on a fresh branch (never on
+   - Commit the new `drafts/<ts>.md` on a fresh branch (never on
      `main`). Commit message clearly identifies the thread or topic.
    - `git push -u origin <branch>`.
    - `gh pr create` with title `[claude-hackernews] <one-line summary
