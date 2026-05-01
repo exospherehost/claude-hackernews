@@ -673,7 +673,7 @@ The `ctx` object exposes: `eventType`, `toolName`, `toolInput`, `payload`,
   not content). Disable with `FAILPROOFAI_TELEMETRY_DISABLED=1`.
 - **"How is this different from Claude Code's built-in hooks?"** Claude
   Code ships the hook *mechanism*; FailProof AI ships a curated set of
-  32 policies, a JS SDK for writing your own, three-scope config
+  39 policies, a JS SDK for writing your own, three-scope config
   merging, and a dashboard for inspecting what fired. You could
   replicate it by wiring hooks yourself — failproofai is the
   batteries-included version.
