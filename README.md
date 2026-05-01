@@ -1,9 +1,12 @@
 # claude-hackernews
 
-Browser-driven Hacker News automation for the operating account, run from
+Browser-driven Hacker News drafting harness, run from
 [Claude Code](https://claude.com/claude-code) via the
 [browser-use](https://github.com/browser-use/browser-use) MCP server attached
-to a real Windows Chrome over the Chrome DevTools Protocol.
+to a real Windows Chrome over the Chrome DevTools Protocol. The harness
+is unauthenticated — Claude reads HN, drafts proposed replies into
+`drafts/<ts>.md`, and surfaces them as PRs. You post manually from
+whichever HN account you choose.
 
 You ask Claude to do something on HN ("draft a comment on this thread",
 "summarize today's Show HN posts", "find an Ask HN where FailProof helps").
@@ -23,11 +26,12 @@ HN composer and never clicks submit — the PR is the only handoff path.
 1. **Write the comment to `drafts/<utc-timestamp>.md`** where
    `<utc-timestamp>` is UTC `YYYY-MM-DDTHHMMSSZ` (filesystem-safe; no
    colons in the time portion, e.g. `drafts/2026-04-30T143022Z.md`).
-   One file per intended post. The file must contain the thread URL,
-   the operating account handle (detected from the live browser
-   session), and the full body to be posted. (`comments/` is a
-   separate directory used as a log of replies that were actually
-   posted on HN — Claude does not write there on its own.)
+   One file per intended post. The file must contain the thread URL
+   and the full body to be posted. Drafts are account-agnostic — no
+   operating-account handle, no identity detection. The user picks
+   the posting account at post time. (`comments/` is a separate
+   directory used as a log of replies that were actually posted on
+   HN — Claude does not write there on its own.)
 2. **Commit** that file on a fresh branch (never on `main`). The commit
    message must clearly identify the thread or topic.
 3. **Push** the branch to the remote.
@@ -49,7 +53,7 @@ Chrome with:                                    Claude Code (this repo)
   --remote-debugging-port=9334                       │
   --remote-debugging-address=0.0.0.0                 │ stdio
   --user-data-dir=…\hn-profile                       │
-  (logged in as the operating HN account)       ┌────▼────────────────────┐
+  (no login required; reads only)               ┌────▼────────────────────┐
         ▲                                       │ browser-use MCP server  │
         │                                       │ (uvx --from             │
         └─── CDP over HTTP/WS ──────────────────┤  browser-use[cli] --mcp)│
@@ -57,9 +61,10 @@ Chrome with:                                    Claude Code (this repo)
 ```
 
 The browser is **never** launched by Claude. You launch it once on Windows
-with a dedicated profile that's logged into the operating HN account;
-browser-use attaches to that running instance instead of spawning its own.
-Cookies persist in the profile.
+with a dedicated profile; browser-use attaches to that running instance
+instead of spawning its own. The profile does not need to be logged in
+— this harness only reads HN — though if you've previously logged in,
+the cookies persist.
 
 ## One-time setup
 
@@ -80,10 +85,10 @@ bash scripts/win-chrome.sh
 ```
 
 A new Chrome window opens at news.ycombinator.com with a brand-new profile
-rooted at `%USERPROFILE%\hn-profile`. **Log in as the operating account
-manually** (or sign up — HN's signup form is short and there's no email
-confirmation by default). Cookies persist in that profile, so you won't
-need to re-log on later runs.
+rooted at `%USERPROFILE%\hn-profile`. **Logging in is optional.** This
+harness only reads HN, so a logged-out profile is fine. If you do log
+in (handy for showdead, profile pages, etc.), cookies persist across
+runs.
 
 Verify the CDP endpoint is reachable from WSL:
 
@@ -121,15 +126,15 @@ Inside Claude Code:
 Examples of prompts that work well. Claude will read the relevant playbook
 under `INSTRUCTIONS.md` and follow it.
 
-**Browse / read** (no writes):
+**Browse / read**:
 ```
-Open my HN profile and summarize my last 5 submissions and comments
-with timestamps.
-
 Summarize the top 10 Show HN posts from the last 24 hours.
 
 Read https://news.ycombinator.com/item?id=12345678 and give me the
 TL;DR plus the strongest counterargument in the thread.
+
+Read /user?id=<some-handle> and summarize that account's recent
+submissions and comments.
 ```
 
 **Discovery / triage**:
@@ -139,25 +144,19 @@ about reliability testing or guardrails for LLM agents. Surface a
 candidate list with one-line rationale per thread.
 ```
 
-**Posting / commenting** (always two-step — draft → approve → submit):
+**Drafting** (Claude writes a `drafts/<ts>.md` and opens a PR; you
+post manually after merging):
 ```
 Find one thread on the HN front page where FailProof would help.
-Draft a comment in failproofai's voice, show me, post after I approve.
+Draft a reply, commit it on a fresh branch, push, open a PR.
 
-Draft a Show HN submission for failproofai. Title and body.
-Show me before submitting.
-```
-
-**Light engagement** (be conservative — caps in `CLAUDE.md`):
-```
-Find any HN stories from this week that mention "agent guardrails" or
-"hooks". Surface the candidate list. After I approve, upvote.
+Draft a Show HN submission for failproofai. Title and body. PR it.
 ```
 
 A few prompts to never use (Claude will refuse anyway):
-- "Post X without showing me first" — drafts always require approval.
+- "Post X to HN directly" — Claude does not submit to HN; only PRs.
+- "Upvote / favorite / vote on X" — write-side interactions are off.
 - "Email u/Y from their profile" — outbound contact is off by default.
-- Anything that would exceed the daily caps in `CLAUDE.md`.
 
 ## Playbooks
 
@@ -165,11 +164,13 @@ Task-specific procedures live in [`INSTRUCTIONS.md`](INSTRUCTIONS.md).
 Highlights:
 
 - **How to drive HN (always through the browser)** — primitives cheat
-  sheet, identity detection, pre-flight checks, MCP launch-order trap.
+  sheet, pre-flight checks, MCP launch-order trap.
 - **Reads** — feed coverage (front, newest, ask, show, best, from?site=,
   threads?id=, hn.algolia.com search UI), search query patterns.
-- **Writes** — comment composer recipe (HN's plain `<textarea>`, vastly
-  simpler than Reddit's Lexical), submission flow, vote/favorite.
+- **Writes (comments via PR)** — drafting flow, required draft-file
+  sections, three-surface duplicate scan. The HN comment composer
+  recipe (currently inert) is preserved for the day direct-posting is
+  re-enabled.
 - **Output artifact** — every proposed reply lands as
   `drafts/<utc-timestamp>.md` (committed and surfaced via PR for
   manual posting); the `comments/` directory is a separate log of
@@ -183,13 +184,19 @@ in place.
 
 Defined in [`CLAUDE.md`](CLAUDE.md). Headlines:
 
-- Drafts always need explicit approval before submitting.
-- HN guidelines and thread context read before any post.
-- No edits/deletes on others' content; no replies on dead/flagged/closed
-  threads.
-- Stop on captcha / login wall / rate-limit / shadowban signals.
-- Daily caps: ≤ 2 submissions, ≤ 10 comments, ≤ 30 upvotes.
-- Randomized 5–30s delays between consecutive write actions.
+- Unauthenticated by policy. Drafts are account-agnostic — the user
+  picks the posting account at post time.
+- Claude never types into the HN composer or clicks submit; the PR is
+  the only handoff path.
+- Browser-only access for reads (no Firebase / Algolia / RSS / curl
+  against ycombinator.com hosts).
+- HN guidelines and thread context read before any draft.
+- Stop on captcha / login wall / rate-limit signals; back off, don't
+  log in to dismiss.
+- Daily caps as guidance for the posting account: ≤ 2 submissions,
+  ≤ 10 comments, ≤ 30 upvotes.
+- Human-pace cadence on reads: jittered 3-12s between page navigations,
+  ≤ 20 page loads per 5-minute window.
 
 ## Repo layout
 
@@ -234,15 +241,16 @@ Check:
 - `uvx --from browser-use[cli] browser-use --help` runs without errors
 
 **HN asks to log in mid-session**
-The dedicated profile's session expired. Re-launch Chrome with
-`scripts/win-chrome.sh`, log in manually, leave the window open.
+A read path hit a login-gated page. Most HN reads work logged out, so
+this usually means the agent navigated somewhere that requires auth
+(e.g., `showdead`, vote arrows). Don't log in to dismiss it; back off
+and retry the workflow without the gated step. Logging in is optional
+for this harness, not required.
 
-**The action ran but I see "we have a daily limit on new submissions"**
-You hit an HN rate limit. Stop. Wait at least 30 minutes before any
-further write action. If it persists, the account may have been
-shadowbanned — check by opening the same thread in an incognito window
-and confirming your recent comments are visible. (HN shadowbans are
-silent; the account sees its own dead comments as alive.)
+**The agent saw "we have a daily limit" or "submitting too fast"**
+That's a rate-limit signal from a read sweep that was too aggressive.
+Stop. Wait at least 30 minutes before resuming. The harness does not
+submit, so this should not surface from the write side.
 
 **WSL→Windows IP keeps changing on every restart**
 Switch WSL2 to mirrored networking. Edit `C:\Users\<you>\.wslconfig`:
@@ -267,9 +275,10 @@ other's tabs, double-check `.mcp.json` in each repo is on its own port.
 
 - **Firebase HN API / Algolia HN API / RSS** — this harness is browser-only
   by design (see `CLAUDE.md`). HN's APIs are public and unauthenticated, so
-  the temptation to reach for them is real. Resist. Account-safety reason:
-  side-channel reads from a non-browser fingerprint correlate with the
-  browsing session and flag faster on HN than they do on Reddit.
+  the temptation to reach for them is real. Resist. Reason: side-channel
+  HTTP traffic to HN's APIs while a browser is on the same machine is a
+  noisy fingerprint and a traffic pattern moderation watches for, even
+  with no logged-in session.
 - **Scheduled jobs** — `scripts/hourly_hackernews_cron.py` is the hourly
   trigger (mirror of claude-reddit's `hourly_reddit_cron.py`). Wire it
   into system cron and it'll bring Chrome up via `scripts/win-chrome.sh`,
