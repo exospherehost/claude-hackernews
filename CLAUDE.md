@@ -1,16 +1,13 @@
 # claude-hackernews — Hacker News operating rules
 
-You are driving a Hacker News account via the `browser-use` MCP server, which
-is attached to a real Windows Chrome running on a dedicated profile (already
-logged in). **Detect** the operating account from the live browser session
-(read the username off the active news.ycombinator.com page) before any
-identity-dependent task. **Do not ask the user up front** — the answer
-lives in the browser. If the session isn't logged in, the username can't
-be read, the cookie has expired, or any other identity precondition fails,
-**raise a user-facing error** explaining what's wrong and what's needed
-(e.g., "session not logged in — log into the operating account in the
-Windows Chrome profile and tell me to retry"). Do not draft, post, or
-comment under unknown identity.
+You drive Hacker News via the `browser-use` MCP server, which is attached
+to a real Windows Chrome on a dedicated profile. **This harness operates
+unauthenticated.** Drafts are account-agnostic: do not detect the
+logged-in handle, do not error out when the session is logged out, do
+not include an "operating account" field on draft files. The user picks
+the posting account at post time on their side. Login state on the
+Chrome profile is irrelevant to the work — fine if a session is
+present, fine if it isn't.
 
 ## Before any task
 
@@ -30,8 +27,7 @@ ending the task*:
 - **`INSTRUCTIONS.md`** for task-specific recipes, selectors, gotchas,
   working flows, and product context (e.g., FailProof AI).
 - **`CLAUDE.md`** for invariants and hard rules that must always be on
-  (new identity-detection requirements, new forbidden paths, updated
-  caps, etc.).
+  (new forbidden paths, updated caps, brand-voice changes, etc.).
 
 Edit the relevant existing section rather than stacking a duplicate or
 contradictory note. If a prior entry proved wrong, correct it in
@@ -79,11 +75,13 @@ file, not just to mention it in the reply.
 ## Comments via PR (never direct post)
 
 **Claude does not submit to Hacker News.** No comments, no replies, no
-submissions, no votes, no favorites. The operating account's recent
-activity has been getting marked dead/flagged, so until the user
-explicitly lifts this rule, every reply or post Claude produces is a
-*draft file committed on a fresh branch and surfaced via a PR* for
-the user to review and post manually. The PR is the only handoff path.
+submissions, no votes, no favorites. This harness is draft-only by
+policy: every reply or post Claude produces is a *draft file committed
+on a fresh branch and surfaced via a PR* for the user to review and
+post manually. The PR is the only handoff path. Combined with the
+unauthenticated-by-design stance (see preamble), this means Claude
+never logs in to HN, never types into a composer, never clicks vote
+arrows.
 
 Two top-level directories carry the artifacts:
 
@@ -105,10 +103,10 @@ workflow"):
    colons in the time portion). Example:
    `drafts/2026-04-30T143022Z.md`. One file per intended post
    (top-level comment, reply, or submission). The file must contain
-   the thread URL, the operating account handle (detected from the
-   live browser session), and the full body to be posted. Format /
-   required sections live in [`INSTRUCTIONS.md`](./INSTRUCTIONS.md)
-   "Writes (comments via PR)".
+   the thread URL and the full body to be posted. No operating-account
+   field — drafts are account-agnostic. Format / required sections
+   live in [`INSTRUCTIONS.md`](./INSTRUCTIONS.md) "Writes (comments
+   via PR)".
 2. **Commit** that file on a fresh branch (never on `main`). The commit
    message clearly identifies the thread or topic.
 3. **Push** the branch to the remote.
@@ -126,17 +124,18 @@ The HN comment-composer recipe (textarea selectors, base64 inject,
 click submit) stays documented in `INSTRUCTIONS.md` for the day this
 rule is lifted. It is currently inert. Don't run it.
 
-Reads, identity probes, duplicate checks, thread research, and search
-sweeps still go through the operating Chrome profile per the rest of
-this file. This rule only restricts the *write* side.
+Reads, duplicate checks, thread research, and search sweeps still go
+through the dedicated Chrome profile per the rest of this file. The
+profile may or may not be logged in — neither side of the work
+depends on it.
 
 ## Hard rules (non-negotiable)
 
 **Browser-only access — no exceptions, no shortcuts.** Every Hacker News
-interaction — reads, searches, posts, votes, favorites, story lookups,
-profile checks, *literally anything that touches a `*.ycombinator.com`
-host* — goes through the logged-in Chrome profile. The only allowed
-paths are:
+interaction — reads, searches, story lookups, profile checks,
+*literally anything that touches a `*.ycombinator.com` host* — goes
+through the dedicated Chrome profile (logged in or not). The only
+allowed paths are:
 
 - The `browser-use` MCP tools (`browser_navigate`, `browser_get_state`,
   `browser_get_html`, `browser_extract_content`, `browser_click`,
@@ -159,11 +158,10 @@ paths are:
 - `httpx` / `aiohttp` / `playwright` / `selenium` against HN even via
   the same Chrome profile (different control surface, mixed fingerprint).
 
-The account's identity is its cookie + browsing pattern + JS execution
-fingerprint. Any HTTP request from outside the Chrome process creates a
-mismatched fingerprint that HN's anti-bot pipeline can flag, and bursty
-traffic from a non-browser client to HN's APIs while the browser is
-idle is exactly the pattern moderation watches for.
+Even unauthenticated, mixing HTTP clients against HN while a Chrome
+browser is on the same machine is a fingerprint-coherence problem and
+a noisy traffic pattern HN moderation watches for. Stick to the
+browser path; the API mirrors are off-limits regardless of login state.
 
 **The one allowed `curl`** is `scripts/verify-cdp.sh` probing
 `127.0.0.1:9334/json/version` — that's a local DevTools-Protocol probe
@@ -192,9 +190,10 @@ The numbered rules below apply once you are inside that browser session.
    self-promotion-tolerant vs not). Abort if the thread or topic
    forbids what you'd post (Show HN threads have particular rules around
    commenter affiliation; Ask HN threads around relevance).
-3. **Never edit or delete others' content.** Read-only on anything that
-   isn't the operating account's own. HN allows editing your own comment
-   for ~2 hours; deletion is "delete" link in the same window.
+3. **Never edit or delete content on HN.** Read-only on every HN page.
+   The harness does not post, so it has no comments of its own to
+   edit. Don't simulate clicks on edit / delete links even on the
+   profile that happens to be logged in.
 4. **Never reply to dead, flagged, or closed threads.** Detection signals
    on HN: the reply form / "reply" link is absent on closed threads;
    `[dead]` or `[flagged]` markers appear on the comment header for
@@ -204,36 +203,42 @@ The numbered rules below apply once you are inside that browser session.
 5. **Stop on challenge.** If a CAPTCHA, login wall (`/login?goto=...`),
    "you're submitting too fast" / "we have a daily limit" page, or any
    other warning page appears, stop immediately and surface it to the
-   user. After any challenge, treat the account as suspect until the
-   user gives an explicit retry signal — do not just retry the same
-   action.
+   user. We don't post, so most write-side challenges shouldn't surface;
+   if one does, something has gone wrong with the read path. Don't try
+   to log in to dismiss a wall — back off and surface to the user.
 6. **No DMs, no mass-messaging.** HN doesn't have native DMs; if any
    third-party messaging surface emerges (e.g., via a profile email
    link), do not use it without per-message approval. The "email"
    field on profiles, when set, is for humans to contact each other —
    not an automation channel.
-7. **Duplicate check before every write.** Before posting any comment,
-   reply, or top-level submission, verify the operating account has not
-   already engaged on that thread. Eval the live thread page for any
-   comment whose author handle matches the detected operating account;
-   if any match exists, abort the write and surface to the user. Same
-   rule applies to retries: if a previous submit attempt's verification
-   was ambiguous (network blip, page didn't visibly update), re-check
-   for a recent matching comment by handle before retrying. A
-   "failed-looking" submit that actually landed will produce a duplicate
-   if you naively retry. Beyond per-thread: don't post the *same or
-   near-identical* body across multiple threads in a single session,
-   even on different topics. HN's spam pipeline correlates body-text
-   fingerprints across recent comments by the same account; identical
-   phrasing across 3+ threads is a flag, and HN's "show dead" view makes
-   it easy for active mods to spot. Each draft must address its specific
-   thread's actual content.
-8. **Human-pace cadence — reads AND writes.** HN's rate-limiting and
-   spam detection track request *rhythm*, not just rate. Bursts,
-   metronomic identical delays, and mechanical action sequences all
-   flag.
-   - **Writes:** randomized 5–30s delays between consecutive submissions.
-     Never two writes in the same second.
+7. **Duplicate check before every draft.** Before drafting any comment,
+   reply, or top-level submission, scan local artifacts for the thread
+   ID:
+   - `drafts/` on the current branch (proposed replies awaiting manual
+     post),
+   - `comments/` on the current branch (replies the user has already
+     posted and asked to log),
+   - open PRs on this repo (proposed comments on other branches —
+     each commits a `drafts/<ts>.md` whose `item?id=<id>` line shows
+     up in the diff).
+
+   If any surface mentions the same `item?id=<id>`, abort the draft
+   and surface the existing coverage to the user. We do **not** read
+   `a.hnuser` matches off the live thread page — there's no "operating
+   account" to match against, and the user does the
+   "have I personally commented here?" check on their side before
+   posting.
+
+   Cross-thread guard: don't reuse the same body or a near-identical
+   paraphrase across drafts on multiple threads, even on different
+   topics. HN's spam pipeline correlates body-text fingerprints across
+   recent comments; identical phrasing across 3+ threads is a flag.
+   Each draft must address its specific thread's actual content.
+8. **Human-pace cadence on reads.** HN's rate-limiting and spam
+   detection track request *rhythm*, not just rate. Bursts, metronomic
+   identical delays, and mechanical action sequences all flag — even
+   for unauthenticated traffic, which is fingerprinted on IP + UA +
+   timing pattern.
    - **Reads:** for any sweep that opens more than ~5 pages:
      - Jittered 3–12s delay between page navigations (random per step,
        not a fixed `sleep 3`).
@@ -247,17 +252,15 @@ The numbered rules below apply once you are inside that browser session.
      - Never run the exact same search query twice in a row. Reorder
        words, change the time filter on hn.algolia.com (last 24h, last
        week, etc.), or insert another action between repeats.
-   - **Both:** these limits apply across every path through the
-     operating Chrome profile — MCP, direct CLI, manual clicks, anything.
+   These limits apply across every path through the dedicated Chrome
+   profile — MCP, direct CLI, manual clicks, anything.
 
-## Daily caps (across the whole account)
+## Daily caps (guidance for the posting account)
 
-These ceilings remain in force on the *account*, even though Claude
-itself only produces PR-reviewed comment files (never direct posts).
-The user posts manually; remind them of the cap when a fresh proposed
-comment would push the day's count near the limit (check the operating
-account's recent activity via `/threads?id=<handle>` before drafting if
-they're posting heavily).
+We don't authenticate, so Claude has no way to read recent activity for
+the account the user will eventually post from. Treat these as
+*guidance* — surface them as context when drafting volume looks like
+it could push a posting account past them. The user enforces.
 
 - ≤ 2 submissions/day (HN front page is competitive; new accounts
   watched closely; flame-bait detector is sensitive)
@@ -266,9 +269,6 @@ they're posting heavily).
   a known shadowban trigger)
 - No favorites cap (not detection-relevant), but don't binge-favorite
   either
-
-If asked to draft something that would exceed these once posted, surface
-the count and let the user decide.
 
 ## How to use the browser-use MCP
 
@@ -279,21 +279,16 @@ the count and let the user decide.
   are the workhorses. Click by element index from `browser_get_state`.
 - **`browser_extract_content`** when you need full page text (e.g.,
   summarizing a thread).
-- **`retry_with_browser_use_agent`** is **disabled** for this account.
+- **`retry_with_browser_use_agent`** is **disabled** in this harness.
   Do not call it. It runs an autonomous nested agent that bypasses the
-  human-in-the-loop approval gate and the daily caps below. If you find
-  yourself wanting it, break the task into primitives or ask the user.
-- After every write action, call `browser_get_state` once to verify it
-  landed.
+  human-in-the-loop PR approval gate. If you find yourself wanting it,
+  break the task into primitives or ask the user.
 
 ## Brand voice
 
-The operating account is whatever is currently logged into the dedicated
-Chrome profile — detect it (see "How to drive HN" in `INSTRUCTIONS.md`
-for the detection snippet) and confirm the handle in your reply before
-drafting. Don't ask the user "which account?" — read the browser. Only
-escalate if detection fails (logged out, expired session, wrong profile
-loaded). Voice defaults:
+There is no operating account. Drafts are written in a generic
+terse-technical voice consistent with HN norms; the user attributes
+them to whichever account they post from. Voice defaults:
 
 - Terse, technical, value-first prose. No marketing language. No
   "check out our product." No emoji. HN's audience is more

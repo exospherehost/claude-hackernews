@@ -26,11 +26,12 @@ lives only in the current conversation is lost on the next run.
 ## How to drive HN (always through the browser)
 
 Every HN interaction goes through the `browser-use` MCP (or the
-`browser-use` CLI as a subprocess when MCP is misbehaving) attached to the
-logged-in Chrome profile. This is non-negotiable per `CLAUDE.md` — reads
-included, not just writes. Account safety depends on a single coherent
-browsing fingerprint, and HN's spam pipeline correlates non-browser
-traffic to its APIs with the cookied session in suspicious ways.
+`browser-use` CLI as a subprocess when MCP is misbehaving) attached to
+the dedicated Chrome profile. This is non-negotiable per `CLAUDE.md` —
+even though the harness is unauthenticated, the API mirrors are
+forbidden because side-channel HTTP traffic to HN's APIs while a
+browser is on the same machine is a noisy traffic pattern moderation
+watches for.
 
 **Concrete "do this / not that" cheat sheet:**
 
@@ -39,9 +40,7 @@ traffic to its APIs with the cookied session in suspicious ways.
 | Search HN | `browser_navigate https://hn.algolia.com/?q=…&type=story` and read DOM | Hit `hn.algolia.com/api/v1/search?query=…` |
 | Browse a feed | Navigate to `/news`, `/newest`, `/ask`, `/show`, `/best`, `/from?site=…`, `/threads?id=…` | Pull the same content from `hacker-news.firebaseio.com/v0/topstories.json` etc. |
 | Read site guidelines | Navigate to `/newsguidelines.html` and `/newsfaq.html` | curl them |
-| Check who's logged in | Navigate to `/` and read the top-right `<a href="user?id=…">` link in `span.pagetop` | Read the cookie file, or any backend identity probe |
 | Pull a story's body / comments | Navigate to `/item?id=N` and read the DOM | Hit `hacker-news.firebaseio.com/v0/item/N.json` |
-| Verify a comment landed | `browser_get_state` after submit, or navigate back to the thread | Hit the Firebase or Algolia endpoint to confirm |
 | Read a user's profile | Navigate to `/user?id=<handle>` and `/threads?id=<handle>` | Hit `/v0/user/<handle>.json` |
 
 The CLI form, when MCP is wedged:
@@ -67,10 +66,12 @@ the fingerprints don't line up perfectly enough).
   means selectors are stable across sessions. The site barely changes.
   When something breaks, suspect rate-limiting / shadowban / login wall
   before suspecting a UI change.
-- **The page header carries identity.** `<span class="pagetop"><a id="me"
-  href="user?id=<handle>">handle</a> ...</span>` is the canonical
-  logged-in indicator. If the link reads `login` instead, the session
-  is logged out — re-launch Chrome and have the user log in.
+- **The page header exposes login state.** `<span class="pagetop"><a
+  id="me" href="user?id=<handle>">handle</a> ...</span>` indicates a
+  logged-in session; a `login` link there means logged out. We don't
+  depend on either state — drafts are account-agnostic — so don't
+  branch on this. If a feed or thread fails to load, suspect rate
+  limiting first, not login state.
 - **`/item?id=<id>` returns the same content for stories and comments.**
   A comment ID resolves to its own page with its parents and replies.
   Useful for permalinks; the comment-as-permalink form is
@@ -90,26 +91,14 @@ the fingerprints don't line up perfectly enough).
   The underlying `hn.algolia.com/api/v1/search?query=...` endpoint is
   forbidden per `CLAUDE.md`.
 
-### Identity detection (don't ask, just read the browser)
+### Identity (there isn't one)
 
-The operating account isn't a config setting — it's whoever is logged
-into the Windows Chrome profile right now. Read it before any
-identity-dependent task:
-
-```bash
-CDP=http://127.0.0.1:9334
-BU="uvx --from browser-use[cli] browser-use --cdp-url $CDP"
-$BU open "https://news.ycombinator.com/" >/dev/null 2>&1
-# HN renders the logged-in handle as the first link inside span.pagetop;
-# logged-out users see a `login` link there instead.
-$BU eval '(()=>{const a=document.querySelector("span.pagetop a[href^=\"user?id=\"]");const handle=a?a.textContent.trim():null;const loggedIn=!!handle;return JSON.stringify({url:location.href,handle,logged_in:loggedIn});})()'
-```
-
-If `logged_in: false` or `handle: null`, raise a user-facing error and
-stop — do **not** draft or post under unknown identity. Example:
-"can't detect a logged-in HN account in the operating Chrome profile —
-log in and say 'go' to retry." If detection succeeds, repeat the
-handle back to the user once before drafting so they can confirm.
+This harness is unauthenticated by policy (see `CLAUDE.md` preamble).
+There is no operating account to detect, and no draft field to fill
+in with a handle. Do not run identity-detection snippets, do not ask
+the user "which account?", do not error out when the profile shows
+the `login` link. The user picks the posting account themselves at
+post time.
 
 ### Pre-flight: bring up Chrome if CDP is down
 
@@ -183,10 +172,11 @@ re-issue the command. Doesn't recur within the same `open` -> `eval`
 ### End-of-run cleanup (close the browser)
 
 Before exiting any **cron-driven or otherwise unattended** task, close
-the operating Chrome instance. The browser holds a logged-in HN
-account session; leaving it running 24/7 between hourly cron runs is a
-detection liability (idle session cookie, browser telemetry, visible
-HN window on the Windows host).
+the dedicated Chrome instance. The cron flow brings Chrome up at the
+start of each run and expects it gone at the end; a leaked process
+makes the next cron tick's launcher refuse to relaunch (the launcher's
+"already running" check matches by user-data-dir) and silently break
+the next hour's run.
 
 **Last step of every run, after all artifacts (comment draft in
 `drafts/<ts>.md`, commit, push, PR) are flushed and the PR URL is
@@ -244,8 +234,9 @@ threads where FailProof AI is relevant, sweep across:
 - **`/from?site=anthropic.com`** (or `cursor.com`, `aider.chat`,
   `continue.dev`, etc.) — every submission from a domain. Useful for
   catching every Anthropic / agent-tool launch story.
-- **`/threads?id=<handle>`** — a user's recent comments. Use for
-  identity verification and for following users you've engaged with.
+- **`/threads?id=<handle>`** — a user's recent comments. Useful when
+  researching who is posting in a topic, or skimming a specific
+  user's recent take.
 - **`https://hn.algolia.com/?q=…&type=story`** (or `&type=comment`) —
   Algolia HN search UI. Drive the form, read the result list with
   `browser_get_state`. Time filter via the `dateRange` query param
@@ -279,8 +270,9 @@ coverage:**
 
 - `drafts/` on the current branch — proposed reply files Claude has
   already written here, awaiting manual post.
-- `comments/` on the current branch — log of replies that were
-  actually posted on HN by the operating account.
+- `comments/` on the current branch — log of replies the user has
+  manually posted on HN and asked Claude to archive (with the comment
+  permalink). The user populates this; Claude does not.
 - Open PRs on this repo — proposed comments on *other* branches,
   pending user review/post. Each PR commits a
   `drafts/<timestamp>.md`, so the thread ID surfaces in the diff.
@@ -333,33 +325,17 @@ The flow:
 2. Confirm HN guidelines and the thread's local norms permit what
    you're proposing (read OP body and top 3-5 comments to gauge
    tone; for Show HN, check whether commenter affiliation is welcome).
-3. **Duplicate check** (`CLAUDE.md` rule 7): eval the thread for any
-   existing comment by the operating account. Even though we're not
-   submitting, we still don't propose a reply for a thread the account
-   has already engaged with — the user would just be re-posting
-   themselves into a duplicate. Snippet:
-   ```js
-   (()=>{
-     // Read the operating handle off the page header (same source as
-     // the identity-detection snippet earlier), then look for any
-     // comment-row author link matching it. Self-contained, no
-     // OPERATING_HANDLE substitution needed.
-     const me = document.querySelector('span.pagetop a[href^="user?id="]');
-     if (!me) return JSON.stringify({error: "not logged in"});
-     const handle = me.textContent.trim().toLowerCase();
-     // HN: each comment header has <a class="hnuser" href="user?id=<handle>">.
-     const matches = Array.from(document.querySelectorAll('a.hnuser'))
-       .filter(a => (a.textContent || '').trim().toLowerCase() === handle);
-     return JSON.stringify({handle, already_commented: matches.length > 0, by_count: matches.length});
-   })()
-   ```
-   Also re-run the three-surface coverage scan from the search section
-   above (`drafts/` and `comments/` on the current branch, and open
-   PRs on this repo) for an entry pointing at the same thread ID. If
-   any surface matches, abort the write and surface the existing
-   coverage to the user. (This duplicates the pre-selection check on
-   purpose: a fresh PR might have landed on another branch since you
-   picked the thread.)
+3. **Duplicate check** (`CLAUDE.md` rule 7): re-run the three-surface
+   coverage scan from the search section above (`drafts/` and
+   `comments/` on the current branch, and open PRs on this repo) for
+   an entry pointing at the same thread ID. If any surface matches,
+   abort the draft and surface the existing coverage to the user.
+   (This duplicates the pre-selection check on purpose: a fresh PR
+   might have landed on another branch since you picked the thread.)
+   We do **not** match on `a.hnuser` against an operating handle — the
+   harness is unauthenticated, so there's no handle to match. The
+   user does the "have I personally commented on this thread already?"
+   check manually before posting.
 4. Write the full text. **No em-dashes, en-dashes, fancy ellipses,
    curly quotes, or unicode arrows** (rule from `CLAUDE.md` brand
    voice). HN pattern-matches these to LLM output even faster than
@@ -384,9 +360,8 @@ The flow:
      `https://news.ycombinator.com/submit`. After the user posts and
      asks you to log the permalink, append the comment permalink as
      a second URL on this line.
-   - **Story / OP / operating account:** one line each. The
-     operating account is read from the live browser session per
-     "Identity detection" above.
+   - **Story / OP:** one line each. No operating-account field —
+     drafts are account-agnostic.
    - **The post:** OP body, or a 2-3 sentence summary if very long.
      For replies, also include the parent comment being replied to,
      verbatim.
@@ -514,19 +489,20 @@ path first; if a draft fails to commit, fall back to this recipe.
 
 ### HN failure modes (what aborting looks like)
 
-- **Login wall.** `/login?goto=…` — session expired, log in and retry.
+- **Login wall.** `/login?goto=…` — HN gated something we tried to
+  read. Don't log in to dismiss it; back off and surface to the user.
+  Most read paths (`/news`, `/newest`, `/item`, `/user`, Algolia
+  search UI) work logged out.
 - **Rate limit.** "We have a daily limit on new submissions" or
-  "submitting too fast" — stop, wait ≥ 30 minutes, surface to user.
-- **Shadowban.** Your comments appear normally to you but are dead
-  ([dead] marker) to others. Verify by opening the thread permalink
-  in an incognito Chrome window and confirming your comment is
-  visible. If invisible: stop all writes from this account and tell
-  the user.
-- **Flagged.** A specific comment marked `[flagged]` — usually
-  reversible if the comment is on-topic and substantive; let the user
-  decide whether to email mods.
-- **No reply form.** Thread is too old or closed. Don't simulate clicks
-  on a missing form; abort and surface.
+  "submitting too fast" — we don't submit, so this should not surface
+  for our flow. If it does, the read sweep has been too aggressive;
+  stop, wait ≥ 30 minutes, surface to user.
+- **Shadowban / flagged.** Not applicable — the harness does not
+  post, so it accumulates no comments to be marked dead or flagged.
+  Whichever account the user posts from later is their concern.
+- **No reply form.** Thread is too old or closed. Note this in the
+  draft (so the user knows the thread is unrepliable before they try
+  to paste); don't try to simulate the composer either way.
 
 ## failproofai PreToolUse:Bash false-positive on HN URLs
 
