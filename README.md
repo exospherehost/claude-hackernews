@@ -283,14 +283,14 @@ other's tabs, double-check `.mcp.json` in each repo is on its own port.
   trigger (mirror of claude-reddit's `hourly_reddit_cron.py`). Wire it
   into system cron and it'll bring Chrome up via `scripts/win-chrome.sh`,
   poll `scripts/verify-cdp.sh` until CDP is reachable, then shell out to
-  `luv claude-hackernews "<prompt>" -nit` inside the working-hours
-  window with a randomized pre-run sleep. The default prompt enforces
+  `luv claude-hackernews "<prompt>" -nit` after a randomized pre-run
+  sleep (no working-hours gate; runs every cron firing). The default prompt enforces
   the strict comment workflow above (drafts to `drafts/` + commit +
   push + PR; never submits to HN). Run from a dedicated `.cron/` clone
   the same way the Reddit harness does. End-of-run Chrome cleanup is
   the agent's responsibility via `scripts/win-chrome-close.sh` (see the
   "End-of-run cleanup" section in `INSTRUCTIONS.md`).
-- **Logging destination** — lifecycle events (start / skip / ok / fail)
+- **Logging destination** — lifecycle events (start / ok / noop / fail)
   go to a Discord webhook, **not** healthchecks.io or any other
   uptime-style ping service. Set `CRON_DISCORD_WEBHOOK_URL` in the
   crontab line; leave it empty to disable. Long bodies attach as
