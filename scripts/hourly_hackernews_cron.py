@@ -135,13 +135,21 @@ LUV_BINARY = _env_str("CRON_LUV_BINARY", "luv")
 LUV_REPO = _env_str("CRON_LUV_REPO", "claude-hackernews")
 LUV_PROMPT = _env_str(
     "CRON_LUV_PROMPT",
-    "Take a fresh context of everything on failproofai on "
-    "github.com/exospherehost/failproofai and find a Hacker News thread "
-    "where failproofai is genuinely relevant to the discussion. Follow "
-    "the strict comment workflow in README.md: write the proposed reply "
-    "to comments/<utc-timestamp>.md on a fresh branch, commit, push, and "
-    "open a PR for human review before posting. Do not type into the HN "
-    "composer or click submit; the PR is the only handoff path.",
+    "COMMENTS-VIA-PR MODE is active (see CLAUDE.md and README.md). Take "
+    "a fresh context of failproofai (github.com/exospherehost/failproofai). "
+    "Find a Hacker News thread via browser-driven discovery (/news, "
+    "/newest, /ask, /show, hn.algolia.com search, /from?site=... -- not "
+    "memorized links) where a user is hitting a problem failproofai would "
+    "help. Draft a reply per brand voice and ASCII-only punctuation. Do "
+    "NOT click submit on HN, do not type into the composer. Write the "
+    "draft to comments/<UTC-ISO>.md per INSTRUCTIONS.md `Writes (comments "
+    "via PR)` step 6 with **Status:** draft (pending manual post). Then "
+    "commit the draft on the working branch (message: '[claude-hackernews] "
+    "draft: <short topic>'), push the branch, and open a pull request via "
+    "`gh pr create` with the draft as the payload and the discovery + "
+    "thread URLs in the body. One draft, one commit, one PR - never "
+    "bundle. Surface the PR URL and the draft file path in your final "
+    "reply.",
 )
 
 # Hard wall on how long luv may run before we kill it and report failure.
