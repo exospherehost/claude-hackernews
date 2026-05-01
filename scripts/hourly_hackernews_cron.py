@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """hourly_hackernews_cron.py - hourly trigger for the claude-hackernews HN job.
 
-Wire this into system cron at the top of every hour. The script itself
-decides whether THIS PARTICULAR hour actually does work, via two gates:
-
-  1. Working-hours window. Outside the window, exit immediately (success).
-  2. A random pre-run sleep. Even on hours that run, we don't all fire
-     at HH:00:00 sharp.
+Wire this into system cron at the top of every hour. The script runs
+on every firing -- there is no working-hours gate. Before launching
+luv we still take a random pre-run sleep so we don't all fire at
+HH:00:00 sharp.
 
 When both pass, the script first ensures the operating Chrome is up
 (via scripts/win-chrome.sh, idempotent; polls scripts/verify-cdp.sh until
@@ -37,7 +35,6 @@ of replies that were actually posted on HN -- not a write target.)
 Monitoring posts to a Discord webhook (one message per lifecycle event):
 
     start           -- "this run started"
-    skip            -- "outside working hours"
     chrome-fail     -- Chrome bring-up failed
     ok              -- luv finished OK AND a new PR was opened on GH_REPO
                        this run (body = full output + log buffer + PR URL)
@@ -68,8 +65,7 @@ each line its own CRON_DISCORD_WEBHOOK_URL value (cron honors per-line
 env overrides) so HN and Reddit lifecycle events can land in separate
 Discord channels.
 
-Smoke-testing without waiting for cron, working-hours bypassed and zero
-pre-run sleep:
+Smoke-testing without waiting for cron, with zero pre-run sleep:
 
     CRON_FORCE=1 python3 scripts/hourly_hackernews_cron.py
 
@@ -118,11 +114,6 @@ def _env_str(name: str, default: str) -> str:
     v = os.environ.get(name)
     return v if v not in (None, "") else default
 
-
-# Working hours, in the system's local timezone. Inclusive start, exclusive
-# end. Default 09:00 - 21:00.
-WORK_HOURS_START = _env_int("CRON_WORK_HOURS_START", 9)
-WORK_HOURS_END = _env_int("CRON_WORK_HOURS_END", 21)
 
 # Random pre-run sleep range, in seconds. Picked uniformly per run so the
 # real start time is jittered across the hour. Keep MAX comfortably under
@@ -198,7 +189,6 @@ CHROME_BRINGUP_TIMEOUT_SECONDS = _env_int("CRON_CHROME_BRINGUP_TIMEOUT_SECONDS",
 
 _DISCORD_COLORS = {
     "start": 0x3498DB,  # blue
-    "skip":  0x95A5A6,  # gray
     "ok":    0x2ECC71,  # green
     "noop":  0xF1C40F,  # yellow -- ran clean but produced no PR
     "fail":  0xE74C3C,  # red
@@ -245,7 +235,7 @@ def _build_multipart(payload_json: dict, filename: str, file_bytes: bytes) -> tu
 def _discord_notify(level: str, title: str, body: str = "") -> None:
     """Best-effort Discord webhook post. Never raises; failures hit stderr.
 
-    `level` drives the embed color and is one of: start, skip, ok, fail.
+    `level` drives the embed color and is one of: start, ok, noop, fail.
     `title` is the embed title (<= 256 chars; we don't enforce, just trust
     the caller).  `body` is the freeform log content; if it fits inline
     it's embedded as a fenced code block, otherwise it's attached as a
@@ -317,10 +307,6 @@ def _compose_body(event_body: str = "") -> str:
     if event_body and trail:
         return f"{event_body}\n\n--- log trail ---\n{trail}"
     return event_body or trail
-
-
-def _within_working_hours(now: dt.datetime) -> bool:
-    return WORK_HOURS_START <= now.hour < WORK_HOURS_END
 
 
 def _random_wait_seconds() -> int:
@@ -464,23 +450,10 @@ def main() -> int:
     force = bool(os.environ.get("CRON_FORCE"))
 
     if force:
-        _log("CRON_FORCE=1 - bypassing working-hours and pre-run sleep")
+        _log("CRON_FORCE=1 - bypassing pre-run sleep")
     else:
-        if not _within_working_hours(now):
-            msg = (
-                f"skip: outside working hours "
-                f"(hour={now.hour:02d}, window={WORK_HOURS_START:02d}-{WORK_HOURS_END:02d})"
-            )
-            _log(msg)
-            _discord_notify(
-                "skip",
-                "claude-hackernews cron - skipped (outside working hours)",
-                _compose_body(msg),
-            )
-            return 0
-
         wait = _random_wait_seconds()
-        _log(f"within working hours; sleeping {wait}s before luv")
+        _log(f"sleeping {wait}s before luv")
         time.sleep(wait)
 
     try:
