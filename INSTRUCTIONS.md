@@ -699,27 +699,132 @@ The `ctx` object exposes: `eventType`, `toolName`, `toolInput`, `payload`,
 
 ### Tone for discussing it on HN
 
-HN's audience is more skeptical of marketing language than Reddit's; the
-voice rules from `CLAUDE.md` apply doubly here.
+HN's audience is more skeptical of marketing language than Reddit's;
+the voice rules from `CLAUDE.md` apply doubly here. The rules below
+are non-optional. A draft that violates the structural rules
+(*Thread-fit gate*, *Length and shape*, *Forbidden in any reply*)
+does not get committed or pushed as a PR. Rewrite it or skip the
+thread; skipping is free.
 
-- Lead with the concrete failure mode the policy prevents, not marketing
-  copy. "Agent rm -rf'd node_modules — `block-rm-rf` exists for that"
-  beats "comprehensive safety platform". HN downvotes the latter on
-  pattern.
-- Disclose affiliation early. HN explicitly asks commenters to disclose
-  when they work on a product they're discussing; not doing so is a
-  fast track to being flagged. A leading line like "(disclosure: I
-  work on FailProof)" is the norm.
-- Link the GitHub repo, not the marketing site, when developers are
-  asking technical questions. HN clicks through to GitHub more readily
-  than to landing pages.
-- Don't oversell. It is hooks + a curated policy set + a dashboard. It
-  is not AGI alignment.
-- Show, don't pitch. A code snippet of a policy or a paste of a real
-  agent failure that the policy would have caught will get you upvotes;
-  bullet-listed feature claims won't.
-- HN guidelines first (per `CLAUDE.md`): avoid product content on
-  threads where it would be off-topic, even tangentially. Show HN
-  threads explicitly welcome it; most others do not.
+These rules came out of a post-mortem after the first flagged
+FailProof comment on HN (see *Worked example: working vs flagged*
+below). Don't soften them without re-running that comparison.
+
+#### Thread-fit gate (decide before drafting)
+
+Only draft a FailProof-mentioning reply when the thread offers a
+*concrete failure mode the product addresses* OR is a Show HN that
+explicitly solicits product discussion. A reply that mentions
+FailProof on a thread where the parent did not ask a tool-shaped
+question is a pitch by definition, and HN flags pitches.
+
+| Thread shape | Mention FailProof? |
+|---|---|
+| Concrete-failure post: "agent deleted my DB", "agent force-pushed to main", "agent leaked my .env", "rm -rf'd my node_modules" | **Yes** — name ONE policy + ONE snippet tied to that exact failure |
+| Show HN of an adjacent product (sandbox, gateway, hook manager, policy engine) where the OP solicits design discussion | **Yes** — disclose affiliation, lead with substantive engagement on their design before mentioning FailProof |
+| Ask HN about meta-topics: "is Claude Code getting worse?", "how do you balance meta-tools and shipping?", "what's your harness setup?", "what's your CLAUDE.md look like?" | **No.** Reply on the topic without the product, or skip the thread |
+| Vent threads: "I'm done with X tool", "Y feels broken lately", "agents are mid" | **No.** Empathy + concrete diagnosis only; no product mention |
+| Threads where the parent's pain is at the model layer (regression, context window, reasoning quality), not the tool layer | **No.** FailProof does not solve model regressions; saying so reads as opportunism |
+| Long-tail / saturated front-page threads where mid-thread visibility is near-zero | **No.** A pitch buried in a 1000-comment thread is read as keyword-hunting, not as help |
+
+If the thread fails the gate, the right move is *no draft at all*,
+not a softer pitch. A flagged comment costs the operating account
+karma and audience trust; not posting costs nothing.
+
+#### Length and shape (when the gate passes)
+
+A FailProof-mentioning reply has a strict shape, derived from what
+worked vs what got flagged:
+
+- **One disclosure line** at the very top: `(disclosure: I work on
+  FailProof AI: https://github.com/exospherehost/failproofai)`.
+  Nothing softer ("so weight that accordingly", "for full
+  transparency" read as hedges), nothing fancier. Plain parens.
+- **One paragraph of substantive on-topic content** that would stand
+  on its own with the FailProof mention removed. If you can't write
+  that paragraph, the comment is a pitch — abort.
+- **At most ONE policy name** mentioned by name OR **ONE
+  custom-policy snippet**, directly tied to the OP's described
+  failure. Never both. Never a comma-list of policy names.
+- **Body under ~150 words.** The successful first FailProof reply was
+  ~110 words; the flagged one was ~220 and read as marketing copy.
+  Length is a signal on HN — short comments with code carry more
+  weight than long comments without.
+- **The repo URL appears once.** If it's in the disclosure line, do
+  not repeat it at the bottom.
+
+#### Forbidden in any reply (instant-flag patterns)
+
+These show up across the flagged drafts in this repo and are non-
+negotiable. If you find yourself writing one of these, the comment is
+already on the wrong path; back up and rewrite.
+
+- **Install / quick-start commands in the comment body.** No
+  `npm install -g failproofai`, no `failproofai policies --install`,
+  no `failproofai` dashboard-launch line. HN reads install commands
+  in comments as ad copy. If the reader wants to install, they click
+  the disclosure link and read the README.
+- **Comma-listed policy names** (`block-rm-rf, block-force-push,
+  sanitize-api-keys, sanitize-jwt, warn-destructive-sql, ...`).
+  Pick exactly one, tied to the OP's failure. The reader does not
+  need a feature catalog mid-thread.
+- **Config-feature / version-number talk.** No "three-scope merge",
+  "convention-based loading", "39 built-in policies", "latest release
+  v0.0.X", "fail-open on error", "MIT + Commons Clause", `~/.failproofai/`
+  path callouts, or anything else that lifts straight from the
+  README's feature list. That's README content, not comment content.
+- **Marketing-cadence connectives.** "...and ~30 more", "The point
+  is...", "you just turn it on", "we built X for", "exactly what we
+  built X to solve", "the gap we built X for". Cut every one of
+  these on review; if cutting one breaks a sentence, the sentence
+  was a pitch.
+- **Two-link pattern.** Disclosure link at the top + repo link at
+  the bottom = two links to the same project in one comment.
+  Once is enough; usually the disclosure line is the right place.
+- **Dashboard / UI plugs.** Mentioning `http://localhost:8020` or
+  the Agent Monitor in a comment is feature-tour content. Skip it
+  unless the OP literally asked "how do I see what fired?".
+
+#### Worked example: working vs flagged
+
+The two reference points live in this repo. Re-read them before
+drafting any FailProof-mentioning comment.
+
+- **Working shape:** `comments/2026-04-29T043958Z.md` (prod-DB
+  thread, id=47911524). Posted, not flagged. Names exactly one
+  policy (`warn-destructive-sql`) and one custom-policy snippet
+  that solves OP's literal reported failure (`DROP DATABASE` →
+  `DROP TABLE`). ~110 words. No install command. No feature dump.
+  No three-scope talk. The product is the *source of the snippet*,
+  not the *subject of the comment*.
+- **Flagged shape:** `drafts/2026-05-01T184439Z.md` (Ask-HN-Claude-
+  Code-getting-worse thread, id=47936579). Posted, [flagged] within
+  ~40 minutes. Names nine policies in a comma-list, includes an
+  install command in a fenced block, talks about three-scope merge
+  and `.failproofai/policies/` checked-in semantics, and pivots to
+  the product within two sentences. ~220 words. The product *is*
+  the subject; the on-topic paragraph carries less than half the
+  body.
+
+The diff is a structural one, not a wording one. A draft that
+matches the *flagged* shape will get flagged; rewriting punctuation
+or softening adjectives does not save it. Either match the *working*
+shape or skip the thread.
+
+#### Disclosure form
+
+HN explicitly asks commenters to disclose when they work on a
+product they're discussing; not doing so is a fast track to being
+flagged. The leading-line form above (`(disclosure: I work on
+FailProof AI: <repo URL>)`) is the norm. Do not capitalize
+"Disclosure" as a sentence opener — `disclosure:` lowercased inside
+parens reads more as an in-line aside than as a header.
+
+#### Link target
+
+When linking, use `https://github.com/exospherehost/failproofai`,
+not `https://befailproof.ai`. HN clicks through to GitHub more
+readily than to landing pages, and a marketing-site URL in a
+comment looks more pitch-shaped on hover.
 
 (Task-specific entries get appended below as the system matures.)
